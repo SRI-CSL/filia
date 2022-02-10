@@ -1,0 +1,19 @@
+{
+  "name": "js-mlir-translator",
+  "version": "1.0.0",
+  "description": "Translator from Javascript to MLIR",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"No tests\""
+  },
+  "author": "Joe Hendrix <joe.hendrix@sri.com>",
+  "license": "ISC",
+  "dependencies": {
+    "esprima": "^4.0.1"
+  },
+  "devDependencies": {
+    "@types/esprima": "^4.0.1",
+    "@types/node": "^17.0.14",
+    "typescript": "^4.5.5"
+  }
+}

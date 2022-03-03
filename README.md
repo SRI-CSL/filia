@@ -7,7 +7,7 @@ multiple languages.
 
 ## Proposed Workflow
 
-1. Parse Python into an AST using libraries in Pyre (written in OCaML).
+1. Generate JSON AST of Python code using Python AST.
 
 2. Define an MLIR dialect with the Python language primitives.  This will
 need to be defined in Ocaml for integration with Pyre and in tablegen for

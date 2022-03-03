@@ -2,6 +2,9 @@
 #include <mlir/Parser.h>
 #include <mlir/InitAllDialects.h>
 
+#include <mlir/Dialect/JavaScript/JavaScriptOps.h>
+//#include "mlir/Dialect/JavaScript/JavaScriptOpsDialect.h.inc"
+
 int main(int argc, const char** argv) {
   if (argc != 2) {
     fprintf(stderr, "Please provide the path to read.\n");
@@ -11,10 +14,13 @@ int main(int argc, const char** argv) {
 
   mlir::MLIRContext context;
 
-  context.allowUnregisteredDialects();
+//  context.allowUnregisteredDialects();
   mlir::DialectRegistry registry;
-  registry.insert<mlir::StandardOpsDialect, mlir::memref::MemRefDialect, mlir::omp::OpenMPDialect>();
+  printf("Starting\n");
+  registry.insert<mlir::StandardOpsDialect, mlir::js::JavaScriptDialect>();
   context.appendDialectRegistry(registry);
+  context.loadDialect<mlir::StandardOpsDialect>();
+  context.loadDialect<mlir::js::JavaScriptDialect>();
   mlir::Block block;
   mlir::LogicalResult r = mlir::parseSourceFile(path, &block, &context);
   if (r.failed()) {

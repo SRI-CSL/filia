@@ -13,5 +13,5 @@ export type Ident = string
 //   letter    ::= [a-zA-Z]
 //   id-punct  ::= [$._-]
 export function allowedIdent(x: string): boolean {
-  return /^([A..Z]|[a..z]|[_$])([A..Z]|[a..z]|[_$]|[0..9])*$/.test(x)
+  return /^[A-Za-z-_$][A-Za-z0-9_$]*$/.test(x)
 }

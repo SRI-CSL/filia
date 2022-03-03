@@ -4,12 +4,14 @@
   "description": "Translator from Javascript to MLIR",
   "main": "app.js",
   "scripts": {
+    "build": "tsc",
     "test": "echo \"No tests\""
   },
   "author": "Joe Hendrix <joe.hendrix@sri.com>",
   "license": "ISC",
   "dependencies": {
-    "esprima": "^4.0.1"
+    "esprima": "^4.0.1",
+    "heap-js": "^2.1.6"
   },
   "devDependencies": {
     "@types/esprima": "^4.0.1",

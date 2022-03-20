@@ -9,9 +9,7 @@ from mlir_python.dialects import (
 with Context():
   python_d.register_dialect()
   module = Module.parse("""
-    %0 = arith.constant 2 : i32
-    %1 = python.foo %0 : i32
+    %0 = python.undefined : !python.value
     """)
-  # CHECK: %[[C:.*]] = arith.constant 2 : i32
-  # CHECK: python.foo %[[C]] : i32
+  # CHECK: python.undefined : !python.value
   print(str(module))

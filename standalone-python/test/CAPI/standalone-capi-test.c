@@ -21,9 +21,9 @@ int main(int argc, char **argv) {
   mlirRegisterAllDialects(ctx);
   mlirDialectHandleRegisterDialect(mlirGetDialectHandle__python__(), ctx);
 
-  MlirModule module = mlirModuleCreateParse(
-      ctx, mlirStringRefCreateFromCString("%0 = arith.constant 2 : i32\n"
-                                          "%1 = python.foo %0 : i32\n"));
+  MlirModule module = mlirModuleCreateParse(ctx,
+    mlirStringRefCreateFromCString(
+      "%0 = python.undefined : !python.value\n"));
   if (mlirModuleIsNull(module)) {
     printf("ERROR: Could not parse.\n");
     mlirContextDestroy(ctx);
@@ -31,8 +31,7 @@ int main(int argc, char **argv) {
   }
   MlirOperation op = mlirModuleGetOperation(module);
 
-  // CHECK: %[[C:.*]] = arith.constant 2 : i32
-  // CHECK: python.foo %[[C]] : i32
+  // CHECK: python.undefined : !python.value
   mlirOperationDump(op);
 
   mlirModuleDestroy(module);

@@ -9,17 +9,4 @@
 
 #include "Python/PythonOpsDialect.h.inc"
 
-namespace mlir {
-namespace python {
-
-/// A ValueType represents a JavaScript value.
-class ValueType : public Type::TypeBase<ValueType, Type, TypeStorage> {
-public:
-  // Used for generic hooks in TypeBase.
-  using Base::Base;
-};
-
-} // namespace python
-} // namespace mlir
-
 #endif // PYTHON_PYTHONDIALECT_H

@@ -4,7 +4,7 @@
 #ifndef PYTHON_OPS
 #define PYTHON_OPS
 
-include "Python/PythonDialect.td"
+include "Python/PythonTypes.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
@@ -23,7 +23,7 @@ def Python_UndefinedOp : Python_Op<"undefined", [NoSideEffect]> {
         ```
     }];
 
-    let results = (outs ValueType:$result);
+    let results = (outs Python_Value:$result);
     let assemblyFormat = "attr-dict `:` type($result)";
 }
 

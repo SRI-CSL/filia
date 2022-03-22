@@ -12,6 +12,11 @@ extern "C" {
 
 MLIR_DECLARE_CAPI_DIALECT_REGISTRATION(Python, python);
 
+MLIR_CAPI_EXPORTED bool mlirTypeIsAPythonType(MlirType type);
+
+MLIR_CAPI_EXPORTED bool mlirTypeIsAPythonValueType(MlirType type);
+MLIR_CAPI_EXPORTED MlirType mlirPythonValueTypeGet(MlirContext ctx);
+
 #ifdef __cplusplus
 }
 #endif

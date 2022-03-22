@@ -19,4 +19,11 @@ def Python_Value : Python_Type<"Value", "value"> {
   }];
 }
 
+def Python_Locals : Python_Type<"Locals", "locals"> {
+  let summary = "Mapping from variable names to the value";
+  let description = [{
+    This type represents a mapping from Python variable names to values.
+  }];
+}
+
 #endif // MLIR_DIALECT_PYTHON_IR_PYTHONTYPES

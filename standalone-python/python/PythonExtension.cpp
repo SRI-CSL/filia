@@ -7,7 +7,26 @@
 namespace py = pybind11;
 using namespace mlir::python::adaptors;
 
+//===- DialectPDL.cpp - 'pdl' dialect submodule ---------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
+#include "mlir-c/Dialect/PDL.h"
+#include "mlir-c/IR.h"
+#include "mlir/Bindings/Python/PybindAdaptors.h"
+
+namespace py = pybind11;
+using namespace llvm;
+using namespace mlir;
+using namespace mlir::python;
+using namespace mlir::python::adaptors;
+
 PYBIND11_MODULE(_pythonDialects, m) {
+  m.doc() = "MLIR Python dialect.";
   //===--------------------------------------------------------------------===//
   // python dialect
   //===--------------------------------------------------------------------===//
@@ -23,4 +42,16 @@ PYBIND11_MODULE(_pythonDialects, m) {
         }
       },
       py::arg("context") = py::none(), py::arg("load") = true);
+
+  auto pythonType = mlir_type_subclass(m, "PythonType", mlirTypeIsAPythonType);
+
+  auto valueType = mlir_type_subclass(python_m, "ValueType", mlirTypeIsAPythonValueType);
+  valueType.def_classmethod(
+      "get",
+      [](py::object cls, MlirContext ctx) {
+        return cls(mlirPythonValueTypeGet(ctx));
+      },
+      "Get an instance of ValueTypeType in given context.", py::arg("cls"),
+      py::arg("context") = py::none());
+
 }

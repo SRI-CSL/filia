@@ -9,6 +9,21 @@
 #include "Python-c/Dialects.h"
 
 #include "Python/PythonDialect.h"
+#include "Python/PythonTypes.h"
 #include "mlir/CAPI/Registration.h"
 
+using namespace mlir;
+
 MLIR_DEFINE_CAPI_DIALECT_REGISTRATION(Python, python, mlir::python::PythonDialect)
+
+bool mlirTypeIsAPythonType(MlirType type) {
+  return unwrap(type).isa<python::PythonType>();
+}
+
+bool mlirTypeIsAPythonValueType(MlirType type) {
+  return unwrap(type).isa<python::ValueType>();
+}
+
+MlirType mlirPythonValueTypeGet(MlirContext ctx) {
+  return wrap(python::ValueType::get(unwrap(ctx)));
+}

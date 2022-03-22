@@ -21,44 +21,57 @@ class Analyzer(ast.NodeVisitor):
 
     def undef_value(self):
         with mlir.InsertionPoint(self.block):
-            x = python_d.UndefinedOp()
-        return Value()
+            return python_d.UndefinedOp()
+
+    def none_value(self):
+        with mlir.InsertionPoint(self.block):
+            return python_d.NoneOp()
 
     # Return value denoting method with given name in value
-    def get_method(self, w: Value, name: str):
-        return self.undef_value() #FIXME
+    def get_method(self, w, name: str):
+        with mlir.InsertionPoint(self.block):
+            return python_d.GetMethod(w, mlir.StringAttr.get(name))
 
     # Invoke the given method.
     def invoke(self, method: Value, args: list[Value]):
-        return self.undef_value() #FIXME
+        with mlir.InsertionPoint(self.block):
+            return python_d.Invoke(method, args)
 
-    def load_value_attribute(self, v: Value, attr: str):
-        return self.undef_value() #FIXME
+    def format_value(self, v: Value, format: Value):
+        m = self.get_method(v, '__format__')
+        return self.invoke(m, [v, format])
 
     def joined_string(self, args: list[Value]):
-        return self.undef_value() #FIXME
+        with mlir.InsertionPoint(self.block):
+            return python_d.FormattedString(args)
 
     # Assign a name the value.
-    def assign_name(self, name, v: Value):
-        return None #FIXME
+    def assign_name(self, name:str, v: Value):
+        with mlir.InsertionPoint(self.block):
+            self.map = python_d.LocalSet(self.map, mlir.StringAttr.get(name), v)
 
     # Return value associated with name
     def name_value(self, name: str):
-        return self.undef_value() #FIXME
+        with mlir.InsertionPoint(self.block):
+            return python_d.Get(self.map, mlir.StringAttr.get(name))
 
     def string_constant(self, c: str):
-        return self.undef_value() #FIXME
+        with mlir.InsertionPoint(self.block):
+            return python_d.StrLit(mlir.StringAttr.get(c))
 
     def int_constant(self, c: int):
-        return self.undef_value() #FIXME
+        with mlir.InsertionPoint(self.block):
+            return python_d.IntLit(mlir.IntegerAttr.get(mlir.IntegerType.get_signed(64), c))
 
-    def format_value(self, v: Value):
-        return self.undef_value() #FIXME
+    def load_value_attribute(self, v: Value, attr: str):
+        with mlir.InsertionPoint(self.block):
+            get = python_d.Builtin(mlir.StringAttr.get("getattr"))
+        return self.invoke(get, [v, self.string_constant(attr)])
 
     # Expressions
     def checked_visit_expr(self, e: ast.expr):
         r = self.visit(e)
-        if not isinstance(r, Value):
+        if r == None:
             raise Exception(f'Unsupported expression {type(e)}')
         return r
 
@@ -94,10 +107,11 @@ class Analyzer(ast.NodeVisitor):
         v = self.checked_visit_expr(fv.value)
         if fv.conversion != -1:
             raise Exception(f'Conversion unsupported')
-        if fv.format_spec is not None:
-            raise Exception(f'Format spec is expr')
-        # FIXME
-        return self.format_value(v)
+        if fv.format_spec is None:
+            format = self.none_value()
+        else:
+            format = self.checked_visit_expr(fv.format_spec)
+        return self.format_value(v, format)
 
     # See https://www.python.org/dev/peps/pep-0498/
     def visit_JoinedStr(self, s: ast.JoinedStr):
@@ -139,7 +153,7 @@ class Analyzer(ast.NodeVisitor):
         #FIXME. Add try/finally blocks
         exitMethods = []
         for item in w.items:
-            ctx = self.visit(item.context_expr)
+            ctx = self.checked_visit_expr(item.context_expr)
             assert(ctx != None)
             enter = self.get_method(ctx, '__enter__')
             exit = self.get_method(ctx, '__exit__')
@@ -161,6 +175,9 @@ class Analyzer(ast.NodeVisitor):
             script_main = builtin_d.FuncOp("script_main", tp)
 
         self.block = mlir.Block.create_at_start(script_main.regions[0])
+
+        with mlir.InsertionPoint(self.block):
+            self.map = python_d.EmptyLocals()
 
         for stmt in m.body:
             self.checked_visit_stmt(stmt)

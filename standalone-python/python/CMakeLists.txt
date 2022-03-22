@@ -18,6 +18,9 @@ declare_mlir_dialect_python_bindings(
   TD_FILE dialects/PythonOps.td
   SOURCES
     dialects/python.py
+    dialects/_python_ops_ext.py
+    _mlir_libs/_mlir/dialects/python.pyi
+
   DIALECT_NAME python)
 
 declare_mlir_python_extension(PythonPythonSources.Extension

@@ -10,9 +10,17 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/IR/EnumAttr.td"
 include "mlir/IR/OpBase.td"
 
-
+def Python_BuiltinEval: StrEnumAttrCase<"eval">;
 def Python_BuiltinGetAttr: StrEnumAttrCase<"getattr">;
-def Python_BuiltinAttr: StrEnumAttr<"BuiltinAttr", "", [Python_BuiltinGetAttr]>;
+
+def Python_BuiltinAttr: StrEnumAttr<"BuiltinAttr", "", [
+        Python_BuiltinEval,
+        Python_BuiltinGetAttr,
+        StrEnumAttrCase<"open">,
+        StrEnumAttrCase<"print">
+    ]> {
+    let cppNamespace = "::mlir::python";
+}
 
 def Python_EmptyLocals : Python_Op<"empty_locals", [NoSideEffect]> {
     let summary = "Create an empty local table";
@@ -42,7 +50,6 @@ def Python_Get : Python_Op<"get", [NoSideEffect]> {
     let results = (outs Python_Value:$result);
     let assemblyFormat = "$map `,` $name attr-dict `:` type($result)";
 }
-
 
 def Python_NoneOp : Python_Op<"none", [NoSideEffect]> {
     let summary = "Introduces the None Python value.";
@@ -74,7 +81,7 @@ def Python_UndefinedOp : Python_Op<"undefined", [NoSideEffect]> {
     let assemblyFormat = "attr-dict `:` type($result)";
 }
 
-def Python_IntLit : Python_Op<"intlit", []> {
+def Python_IntLit : Python_Op<"intlit", [NoSideEffect]> {
     let summary = "An integer literal.";
     let description = [{
         FIXME
@@ -85,7 +92,7 @@ def Python_IntLit : Python_Op<"intlit", []> {
     let assemblyFormat = "$val attr-dict `:` type($result)";
 }
 
-def Python_Builtin : Python_Op<"builtin", []> {
+def Python_Builtin : Python_Op<"builtin", [NoSideEffect]> {
     let summary = "A reference to a builtin function.";
     let description = [{
         FIXME
@@ -96,7 +103,7 @@ def Python_Builtin : Python_Op<"builtin", []> {
     let assemblyFormat = "$val attr-dict `:` type($result)";
 }
 
-def Python_StrLit : Python_Op<"strlit", []> {
+def Python_StrLit : Python_Op<"strlit", [NoSideEffect]> {
     let summary = "A string literal.";
     let description = [{
         FIXME

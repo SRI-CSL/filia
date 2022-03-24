@@ -7,9 +7,9 @@ set(LIBS
         MLIROptLib
         MLIRPython
         )
-add_llvm_executable(standalone-opt standalone-opt.cpp)
+add_llvm_executable(python-opt python-opt.cpp)
 
-llvm_update_compile_flags(standalone-opt)
-target_link_libraries(standalone-opt PRIVATE ${LIBS})
+llvm_update_compile_flags(python-opt)
+target_link_libraries(python-opt PRIVATE ${LIBS})
 
-mlir_check_all_link_libraries(standalone-opt)
+mlir_check_all_link_libraries(python-opt)

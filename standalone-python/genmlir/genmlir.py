@@ -1,4 +1,5 @@
 import ast
+import sys
 from pprint import pprint
 
 import mlir_python.ir as mlir
@@ -187,25 +188,21 @@ class Analyzer(ast.NodeVisitor):
         return True
 
 def main():
-
-    with open("example/insecure_eval.py", "r") as source:
+    if len(sys.argv) != 2:
+        sys.stderr.write("Please specify input file.\n")
+        sys.exit(-1)
+    path = sys.argv[1]
+    with open(path, "r") as source:
         tree = ast.parse(source.read())
 
     with mlir.Context() as ctx, mlir.Location.file("f.mlir", line=42, col=1, context=ctx):
-
         python_d.register_dialect()
-
-        print(f'Dialect {ctx.is_registered_operation("python.undefined")}')
 #        ctx.allow_unregistered_dialects = True
         m = mlir.Module.create()
-
         analyzer = Analyzer(m)
         r = analyzer.visit(tree)
-        assert (r is not None)
-
-        print("Module")
-        print(str(m))
-
+    assert (r is not None)
+    print(str(m))
 
 if __name__ == "__main__":
     main()

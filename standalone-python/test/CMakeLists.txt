@@ -12,7 +12,7 @@ configure_lit_site_cfg(
 set(PYTHON_TEST_DEPENDS
         FileCheck count not
         standalone-capi-test
-        standalone-opt
+        script-opt
         )
 if(MLIR_ENABLE_BINDINGS_PYTHON)
   list(APPEND PYTHON_TEST_DEPENDS PythonDialectModules)

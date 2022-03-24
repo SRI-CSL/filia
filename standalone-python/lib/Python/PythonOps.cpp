@@ -7,3 +7,5 @@
 
 #define GET_OP_CLASSES
 #include "Python/PythonOps.cpp.inc"
+
+#include "Python/PythonOpsEnums.cpp.inc"

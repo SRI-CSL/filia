@@ -14,4 +14,6 @@
 #define GET_OP_CLASSES
 #include "Python/PythonOps.h.inc"
 
+#include "Python/PythonOpsEnums.h.inc"
+
 #endif // PYTHON_PYTHONOPS_H

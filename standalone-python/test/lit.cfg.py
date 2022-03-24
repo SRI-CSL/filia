@@ -55,7 +55,7 @@ llvm_config.with_environment('PATH', config.llvm_tools_dir, append_path=True)
 tool_dirs = [config.python_tools_dir, config.llvm_tools_dir]
 tools = [
     'standalone-capi-test',
-    'standalone-opt',
+    'script-opt',
     ToolSubst('%PYTHON', config.python_executable, unresolved='ignore'),
 ]
 

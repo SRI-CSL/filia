@@ -1,55 +1,39 @@
-import { BlockArg, BlockId, Op, TerminalOp, Value } from '../mlir'
-import { WriteStream } from 'fs'
+import { BlockId, ppCommas, TerminalOp, TypeAttr, Value } from '../mlir'
 
+export class BlockArgValue {
+  value: Value
+  type: TypeAttr
+}
+
+export class BlockTarget {
+  id: BlockId
+  args: BlockArgValue[]
+}
+
+function ppBlockArgValue(a:BlockArgValue): string {
+  return `${a.value} : ${a.type}`
+}
+
+function ppBlockTarget(tgt: BlockTarget): string {
+  return `${tgt.id.label}(${ppCommas(tgt.args.map(ppBlockArgValue))})`
+}
 
 export class BranchOp extends TerminalOp {
-  private targetArgs: Value[] = []
-
-  constructor(readonly target:BlockId) {
+  constructor(readonly target:BlockTarget) {
     super()
   }
 
-  successors(): BlockId[] {
-    return [this.target]
-}
-
-  setSuccessorArgs(index: number, values: Value[]) {
-    if (index === 0) {
-      this.targetArgs = values
-    } else {
-      throw new Error(`Invalid index ${index}.`)
-    }
-  }
-
-  write(s: WriteStream) {
-    throw new Error(`Write BranchOp not implemented`)
+  toString() {
+    return `cf.br $${ppBlockTarget(this.target)}`
   }
 }
 
 export class CondBranchOp extends TerminalOp {
-  private trueArgs: Value[] = []
-  private falseArgs: Value[] = []
-
-  constructor(private test: Value, private trueTarget: BlockId, private falseTarget: BlockId) {
+  constructor(private test: Value, private trueTarget: BlockTarget, private falseTarget: BlockTarget) {
     super()
   }
 
-  successors(): BlockId[] {
-      return [this.trueTarget, this.falseTarget]
-  }
-
-  setSuccessorArgs(index: number, values: Value[]) {
-    if (index === 0) {
-      this.trueArgs = values
-    } else if (index === 1) {
-      this.falseArgs = values
-    } else {
-      throw new Error(`Invalid index ${index}.`)
-    }
-  }
-
-  write(s: WriteStream) {
-    // FIXME
-    throw new Error(`Write CondBranchOp not implemented`)
+  toString() {
+    return `cf.cond_br ${this.test}, ${ppBlockTarget(this.trueTarget)}, ${ppBlockTarget(this.falseTarget)}`
   }
 }

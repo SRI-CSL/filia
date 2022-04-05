@@ -1,4 +1,4 @@
-import {WriteStream} from 'fs'
+import {stat, WriteStream} from 'fs'
 
 /** Identifier for a block.  This should be a valid carot id */
 export interface BlockId {
@@ -12,26 +12,19 @@ export abstract class Op {
 
   isTerminal(): boolean { return false }
 
-  abstract write(s: WriteStream, indent: string)
+  write(s: WriteStream, indent: string) {
+    s.write(`${indent}${this.toString()}\n`)
+  }
 }
 
 export abstract class TerminalOp extends Op {
-
   isTerminal(): boolean { return true }
-
-  abstract successors(): BlockId[]
-
-  // Set arguments to successor block.
-  //
-  // Used to we can defer successor value assignment to
-  // after a defuse pass.
-  abstract setSuccessorArgs(index: number, values: Value[])
 }
 
 
-export interface BlockArg {
+export interface BlockArgDecl {
   name: Value
-  type: string
+  type: TypeAttr
 }
 
 
@@ -51,20 +44,35 @@ export function mkSymbol(name: string): Symbol {
   return { type: "symbol", name: name, toString: () => `@${name}` }
 }
 
-function ppArg(b:BlockArg):string {
+function ppArg(b:BlockArgDecl):string {
   return `${b.name}: ${b.type}`
 }
 
 export class Block {
-  args : BlockArg[]
+  constructor(readonly id: BlockId, readonly args: BlockArgDecl[], readonly statements: Op[]) {
 
-  constructor(readonly id: BlockId, readonly statements: Op[]) {
-    this.args = []
+    if (statements.length == 0) {
+      throw new Error(`Empty statements to add block`)
+    }
+    const n = statements.length-1
+    for (var i = 0; i < n; ++i) {
+      if (statements[i].isTerminal()) {
+        throw new Error(`Internal statement ${i} of ${n} is terminal: ${statements[i]}`)
+      }
+    }
+
+    const term = statements[n]
+
+    if (!term.isTerminal()) {
+      throw new Error(`Final statement ${term.constructor} is not terminal.`)
+    }
   }
 
+  /*
   setBlockArgs(args : BlockArg[]) {
     this.args = args
   }
+  */
 
   writeStmts(s: WriteStream, indent: string) {
     for (const op of this.statements) {
@@ -72,24 +80,11 @@ export class Block {
     }
   }
 
-  terminal(): TerminalOp {
-    return this.statements[this.statements.length-1] as TerminalOp
-  }
-
-
-  successors():BlockId[] {
-    const t = this.terminal()
-    return t.successors()
-  }
 
   write(s: WriteStream, indent: string) {
     var args:string
     if (this.args.length > 0) {
-      args = `(${ppArg(this.args[0])}`
-      for (var i = 1; i < this.args.length; ++i) {
-        args = `${args}, ${ppArg(this.args[i])}`
-      }
-      args = `${args})`
+      args = `(${ppCommas(this.args.map(ppArg))})`
     } else {
       args = ''
     }
@@ -105,4 +100,16 @@ export interface Region {
 // A MLIR type
 export interface TypeAttr {
   toString():string
+}
+
+// Pretty print a comma separated list.
+export function ppCommas(args:any[]):string {
+  if (args.length == 0) {
+    return ""
+  }
+  var r = args[0]
+  for (var i = 1; i < args.length; ++i) {
+    r = `${r}, ${args[i]}`
+  }
+  return r
 }

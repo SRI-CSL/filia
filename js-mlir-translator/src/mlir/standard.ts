@@ -1,5 +1,4 @@
-import { WriteStream } from 'fs'
-import {TerminalOp, Value, TypeAttr, BlockId } from '../mlir'
+import {TerminalOp, Value, TypeAttr } from '../mlir'
 
 interface ReturnValue {
   value: Value
@@ -11,15 +10,7 @@ export class ReturnOp extends TerminalOp {
     super()
   }
 
-  successors(): BlockId[] {
-    return []
-  }
-
-  setSuccessorArgs(index: number, values: string[]) {
-    throw new Error('Return has no successors')
-  }
-
-  write(s: WriteStream, indent: string) {
+  toString() {
     let res : string = ''
     if (this.values.length > 0) {
       var valStr  = this.values[0].value
@@ -29,10 +20,9 @@ export class ReturnOp extends TerminalOp {
         typeStr = `${typeStr}, ${this.values[i].type}`
       }
       res = `${valStr} : ${typeStr}`
-    } else {
-      res = ''
     }
 
-    s.write(`${indent}  return ${res}\n`)
+    return `return ${res}`
+
   }
 }

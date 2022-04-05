@@ -34,7 +34,6 @@ void JavaScriptDialect::printType(Type type, DialectAsmPrinter &os) const {
   print(type.cast<ValueType>(), os);
 }
 
-
 /// Parse a type registered to this dialect.
 Type JavaScriptDialect::parseType(::mlir::DialectAsmParser &parser) const {
   // Parse the main keyword for the type.

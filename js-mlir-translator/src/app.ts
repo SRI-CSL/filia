@@ -9,7 +9,7 @@ import * as mlirb from './mlir/basic'
 import * as mlirjs from './mlir/javascript'
 import * as cf from './mlir/cf'
 import { ReturnOp  } from './mlir/standard'
-import { BlockId, Block, Op, Value } from "./mlir"
+import { BlockId, Block, BlockArgDecl, Op, Value } from "./mlir"
 
 import Heap from 'heap-js';
 
@@ -78,83 +78,12 @@ class Case {
   readonly action: BlockId
 }
 
-class SwitchStmt extends mlir.TerminalOp {
-  #successors: mlir.BlockId[]
-  #caseArgs : Value[][]
-  #defaultArgs : Value[]
-
-  constructor(private cases:Case[], private defaultCase:BlockId) {
-    super()
-    this.#successors = []
-    for (const c of cases) {
-      this.#successors.push(c.action)
-    }
-    this.#successors.push(defaultCase)
-    this.#caseArgs = new Array(this.cases.length)
-  }
-
-  successors(): mlir.BlockId[] {
-    return this.#successors
-  }
-
-  setSuccessorArgs(index: number, values: Value[]) {
-    if (index < this.cases.length) {
-      this.#caseArgs[index] = values
-    }
-    this.#defaultArgs = values
-  }
-
-  write(s: WriteStream) {
-    throw new Error('SwitchStmt unimplemented')
-  }
-}
-
-class StdConstant extends mlir.Op {
-  constructor(ret:mlir.Value, sym:mlir.Symbol) {
-    // FIXME
-    super()
-  }
-  write(s: WriteStream) {
-    // FIXME
-  }
-}
-
-class ThrowOp extends mlir.TerminalOp {
-  constructor(v:mlir.Value) {
-    super()
-  }
-
-  successors(): mlir.BlockId[] {
-    return []
-  }
-
-  setSuccessorArgs(index: number, values: string[]) {
-    throw new Error('ThrowOp has no successors.')
-  }
-
-  write(s: WriteStream) {
-    // FIXME
-  }
-}
-
-interface ClassInfo {
-  readonly classConstructor:mlir.Symbol
-}
-
-// A global variable.
-interface GlobalVar {
-  type: "globalvar"
-  varId: string
-}
-
-
-class Module {
+class MlirModule {
   private symbolGen = new IdentGenerator('')
   private anonClassNum:number=0
 
   // Operations added so far.
   ops : Array<mlir.Op> = new Array()
-
 
   freshFunctionId(x: string|null):mlir.Symbol {
     let val = this.symbolGen.freshIdent(x ? x : `_F`)
@@ -196,7 +125,6 @@ class IdentGenerator {
 
   // Return an unused value name derived from the name of the identifier.
   freshIdent(v: js.Ident): Value {
-    console.log(`Fresh ident ${v} ${js.allowedIdent(v)}`)
     if (js.allowedIdent(v)) {
       const n = this.identIndexMap.get(v)
       if (n === undefined) {
@@ -213,12 +141,7 @@ class IdentGenerator {
 
 }
 
-// A synthetic variable local to a function
-interface FunctionVar {
-  type: "funvar"
-  varId: string
-}
-
+/*
 // Creates a map from blocks to their index.
 function mkBlockIdMap(blocks:BlockInfo[]):Map<BlockId, number> {
   // Map from blocks ids to index in blocks[]
@@ -228,7 +151,9 @@ function mkBlockIdMap(blocks:BlockInfo[]):Map<BlockId, number> {
   }
   return blockMap
 }
+*/
 
+/*
 // Performs a reverse post-order traversal of blocks and returns new blocks
 // This tries to preserve the order of blocks while ensuring a post-order constraint
 // is satisfied.
@@ -271,20 +196,9 @@ function reversePostOrder(blocks:BlockInfo[],
 
   return r
 }
+*/
 
-// Map from blocks to the variables they need.
-type BlockInputMap = Map<BlockId, FunctionVar[]>
-
-// Map from variables to their value when the block ends.
-type VarValueMap = Map<FunctionVar, Value>
-
-// Map from blocks to the variable values when block ends.
-type BlockTermValueMap = Map<BlockId, VarValueMap>
-
-function mkBlock(b:BlockInfo):Block {
-  return new Block(b.id, b.stmts)
-}
-
+/*
 function populateSuccessorArgs(blockTermValues: BlockTermValueMap, blockInputVars: BlockInputMap, b:Block) {
   const valMap = blockTermValues.get(b.id)
   if (!valMap)
@@ -307,6 +221,7 @@ function populateSuccessorArgs(blockTermValues: BlockTermValueMap, blockInputVar
     t.setSuccessorArgs(idx, args)
   }
 }
+*/
 
 function intersect(doms: number[], b1: number, b2: number):number {
   while (true) {
@@ -357,31 +272,23 @@ function computeIdoms(
   return doms
 }
 
-// Return true if all paths to tgt must go through src.
-function isDominator(doms: IDomArray, src:number, tgt:number):boolean {
-  while (src !== tgt) {
-    const next = doms[tgt]
-    if (next == tgt)
-      return false
-    tgt = next
-  }
-  return true
-}
-
+/*
 interface BlockInfo {
   id: BlockId,
-  readVars: ReadVars,
+  inputs: BlockArgDecl[],
   stmts:Op[],
   term:mlir.TerminalOp,
   assignedVars : AssignedVars
 }
+*/
 
-function blockReadClosure(blocks:BlockInfo[], succMap: number[][]): Array<Set<FunctionVar>> {
+/*
+function blockReadClosure(blocks:BlockInfo[], succMap: number[][]): Array<Set<BlockInput>> {
 
     // Compute what variables each block needs.
     var changed:boolean
     // Maps from block ids to the function variables that they need.
-    const blockInputVarSet : Array<Set<FunctionVar>> = new Array(blocks.length)
+    const blockInputVarSet : Array<Set<BlockInput>> = new Array(blocks.length)
 
     do {
       changed = false
@@ -411,6 +318,7 @@ function blockReadClosure(blocks:BlockInfo[], succMap: number[][]): Array<Set<Fu
     } while (changed)
     return blockInputVarSet
 }
+*/
 
 // Information about a MLIR function being constructed by the translator.
 class FunctionContext {
@@ -418,7 +326,7 @@ class FunctionContext {
   symbol: mlir.Symbol
 
   // Blocks to add  to the current function
-  private readonly blocks:Array<BlockInfo> = new Array()
+  private readonly blocks:Array<Block> = new Array()
 
   // Identifer to use for next block.
   private nextBlockId:number = 0
@@ -436,211 +344,188 @@ class FunctionContext {
   }
 
   // Create a new synthetic variable scope to function
-  freshVar(name?:js.Ident):FunctionVar {
+  freshValue(name?:js.Ident):Value {
     const gen = this.gen
-    return { type: "funvar", varId: name ? gen.freshIdent(name) : gen.freshAnon() }
+    return name ? gen.freshIdent(name) : gen.freshAnon()
   }
 
   // Add block to end of blocks
-  addBlock(info: BlockInfo) {
-    const stmts = info.stmts
-    if (stmts.length == 0) {
-      throw new Error(`Empty statements to add block`)
-    }
-    const n = stmts.length-1
-    for (var i = 0; i < stmts.length-1; ++i) {
-      if (stmts[i].isTerminal()) {
-        throw new Error('Internal statement is terminal.')
-      }
-    }
-
-    const term = stmts[stmts.length-1]
-
-    if (!term.isTerminal()) {
-      throw new Error(`Final statement ${term.constructor} is not terminal.`)
-    }
-
-    this.blocks.push(info)
+  addBlock(b: Block) {
+    this.blocks.push(b)
   }
 
   getFunction() : mlirb.Func {
-    // Perform reverse post-order traversal to get new blocks.
-    // This also prunes unreachable blocks.
-    const postBlocks = reversePostOrder(this.blocks, mkBlockIdMap(this.blocks))
-    assert(postBlocks.length > 0)
-
-    const predArray: PredArray = [] // FIXME
-
-    const doms = computeIdoms(predArray)
-
-    // Perform argument analysis.
-    // Compute what identifiers each block needs
-    // Compute dominators
-    // Compute map from blocks to their predecessors
-
-    const argTypes : mlirb.FunArg[] = [] // FIXME
-    //const argTypes = [{name: "args", type: mlirjs.ValueListType}]
-
-    // Create map from block identifiers to index in postBlocks array
-    const blockIdMap : Map<BlockId, number> = new Map()
-    for (var i = 0; i < postBlocks.length; ++i) {
-      blockIdMap.set(postBlocks[i].id, i)
-    }
-
-    // Create successor arrays based on indices in postBlocks array
-    const succMap : number[][] = new Array(postBlocks.length)
-    for (var i = 0; i < postBlocks.length; ++i) {
-      const b = postBlocks[i]
-      const succIds = b.term.successors()
-      const succ = new Array(succIds.length)
-      for (var j = 0; j < succIds.length; ++j) {
-        var idx = blockIdMap.get(succIds[j])
-        if (idx === undefined)
-          throw new Error(`Unknown successor block ${succIds[j]}`)
-        succ[j] = idx
-      }
-      succMap[i] = succ
-    }
-
-    // Maps from block ids to the function variables that they need.
-    const blockInputVarSet : Array<Set<FunctionVar>> = blockReadClosure(postBlocks, succMap)
-
-    const blockInputVars : BlockInputMap = new Map()
-    for (var i = 0; i < postBlocks.length; ++i) {
-      const b = postBlocks[i]
-      const vars = blockInputVarSet[i]
-      blockInputVars.set(b.id, [...vars])
-    }
-
-    // Map from blocks to the values of terminating blocks
-    const blockTermValues : BlockTermValueMap = new Map() // FIXME
-
-    const blocks = postBlocks.map(mkBlock)
-
-    // Populate sucessor arguments
-    for (const b of blocks) {
-      populateSuccessorArgs(blockTermValues, blockInputVars, b)
-    }
-
-    const region = { blocks: blocks }
-
+    process.stderr.write(`Function ${this.blocks.length}\n`)
+    const argTypes : mlirb.FunArg[] = []
+    const region = { blocks: this.blocks }
     const retType = mlirjs.ValueType
     return new mlirb.Func(this.symbol, mlirb.funType(argTypes, retType), region)
   }
 
 }
 
-type ReadVars =  Set<FunctionVar>
-type AssignedVars = Map<FunctionVar, Value>
-
 /// Information about the current block being generated.
 class BlockContext {
   // Identifier for this block
   readonly id:BlockId
 
-  // Statements for the current block.
-  readonly statements:Array<Op> = new Array()
-
   // Variables read from previous block needed to compute block.
-  readonly readVars : ReadVars = new Set()
+  readonly inputs : Array<BlockArgDecl> = new Array()
 
-  // Map from variables to their value in the block.
-  readonly assignedVars : AssignedVars = new Map()
+  // Statements for the current block.
+  statements:Array<Op>|null
 
-  // Number of values
-  private valueCount : number = 0
+  // Local argument to block
+  localsArg: BlockArgDecl
 
-  constructor(blockId: BlockId) {
+  // Value assigned to local variables
+  locals: Value
+
+  constructor(readonly fun:FunctionContext, blockId: BlockId, entryBlock?: boolean) {
     this.id = blockId
+    this.statements = new Array()
+    this.locals = fun.freshValue("locals")
+    if (entryBlock) {
+      this.statements.push(new mlirjs.EmptyLocals(this.locals))
+    } else {
+      this.inputs.push({ name: this.locals, type: mlirjs.LocalsType })
+    }
   }
 
-  appendStatement(op: Op) {
+  // Create a new block input
+  addBlockInput(type: mlir.TypeAttr, name? : js.Ident):BlockArgDecl {
+    const r = { name: this.fun.freshValue(name), type: type }
+    this.inputs.push(r)
+    return r
+  }
+
+  private appendStatement(op: Op) {
+    if (!this.statements)
+      throw new Error('Block already complete.')
+    if (op.isTerminal())
+      throw new Error('Internal statement is terminal.')
     this.statements.push(op)
   }
 
-  // Create a fresh value for the block internals.
-  freshValue(): Value {
-    return `%$${this.valueCount++}`
+  /** Return a value equal to null. */
+  number(x:number):Value {
+    let v = this.fun.freshValue()
+    this.appendStatement(new mlirjs.Number(v, x))
+    return v
   }
 
-  assign(lhs: Var, rhs:Value) {
-    switch (lhs.type) {
-      case "funvar":
-        this.assignedVars.set(lhs, rhs)
-        break
-      case "globalvar":
-        // FIXME
-        throw new TranslationError(null, "Cannot write global variables yet.")
-      default:
-        assertNever(lhs)
-    }
+  /** Return a value equal to null. */
+  null():Value {
+    let v = this.fun.freshValue()
+    this.appendStatement(new mlirjs.Null(v))
+    return v
   }
 
-  // Return an unused value name derived from the name of the identifier.
-  /*
-  freshIdentValue(v: Var): Value {
-    if (typeof v === 'number') {
-      return `%$${v}` // Make sure synthetic identifiers are distinct from freshIdent
-    } else {
-      return this.gen.freshIdent(v)
-    }
-  }
-  */
-
-  // Return a value associated with the given identifier.
-  readVar(v: Var): Value {
-    switch (v.type) {
-      case "funvar":
-        {
-          var val = this.assignedVars.get(v)
-          if (val === undefined) {
-            val = v.varId
-            this.readVars.add(v)
-            this.assignedVars.set(v, val)
-          }
-          return val
-        }
-      case "globalvar":
-        // FIXME
-        throw new TranslationError(null, "Cannot read global variables yet.")
-      default:
-        return assertNever(v)
-    }
+  /** Call a given function */
+  call(callee: Value, args: mlirjs.CallArg[], optional: boolean):Value {
+    const r = this.fun.freshValue()
+    this.appendStatement(new mlirjs.CallOp(r, callee, args, optional))
+    return r
   }
 
   /** Return a value equal to undefined. */
-  undefinedJavascriptValue():Value {
-    let v = this.freshValue()
+  undefinedValue():Value {
+    const v = this.fun.freshValue()
     this.appendStatement(new mlirjs.Undefined(v))
     return v
+  }
+
+  templateLiteral(quasis:string[], args: Value[]): Value {
+    const r = this.fun.freshValue()
+    this.appendStatement(new mlirjs.TemplateLiteral(r, quasis, args))
+    return r
+  }
+
+  /** Return i1 value indicating if we are truthy. */
+  truthy(x:Value):Value {
+    let r = this.fun.freshValue()
+    this.appendStatement(new mlirjs.Truthy(r, x))
+    return r
+  }
+
+  getProperty(obj: Value, name: string): Value {
+    let r = this.fun.freshValue()
+    this.appendStatement(new mlirjs.GetProperty(r, obj, name))
+    return r
+  }
+
+  stringLit(value: string): Value {
+    let r = this.fun.freshValue()
+    this.appendStatement(new mlirjs.StringLit(r, value))
+    return r
+  }
+
+  /** Declare a variable and set initial value. */
+  declVariable(kind: mlirjs.VarKind, name: string, value:Value|undefined) {
+    const r = this.fun.freshValue("locals")
+    this.appendStatement(new mlirjs.LocalDecl(r, this.locals, kind, name, value))
+    this.locals = r
+  }
+
+  /** Set variable lhs to value and update environment. */
+  setVariable(lhs: string, value: Value) {
+    const r = this.fun.freshValue("locals")
+    this.appendStatement(new mlirjs.LocalSet(r, this.locals, lhs, value))
+    this.locals = r
+  }
+
+  /** Get variable with name from context. */
+  getVariable(v: string): Value {
+    const r = this.fun.freshValue(v)
+    this.appendStatement(new mlirjs.LocalGet(r, this.locals, v))
+    return r
+  }
+
+
+  endBlock(term:mlir.TerminalOp) {
+    if (!this.statements)
+      throw new Error('Block already ended')
+    this.statements.push(term)
+    this.fun.addBlock(new Block(this.id, this.inputs, this.statements))
+    this.statements = null
+  }
+
+  branch(id:BlockId) {
+    const args = [{ value: this.locals, type: mlirjs.LocalsType }]
+    this.endBlock(new cf.BranchOp({id: id, args: args}))
+  }
+
+  condBranch(cond: Value, trueId: BlockId, falseId: BlockId) {
+    const args = [{ value: this.locals, type: mlirjs.LocalsType }]
+    this.endBlock(new cf.CondBranchOp(cond, {id: trueId, args: args}, {id: falseId, args: args}))
+  }
+
+  return(val:Value|null) {
+    const v = val
+      ? [{value : val, type: mlirjs.ValueType}]
+      : []
+    this.endBlock(new ReturnOp(v))
   }
 }
 
 
-// Information about a block to jump to within this function
-// to catch an exception
-class CatchInfo {
-  block: BlockId
-  // Variable to assign exception to when jumping to block.
-  var:FunctionVar
-}
 
 interface ScopeConfig {
   // New value to use for this (or undefined to copy from parent).
-  inheritThis?:boolean
   // Method to use for invoking super
   superMethod?:Value|null
+  // Module to use
+  newModule?:MlirModule
   // Start a fresh function (rather than use parent)
   newFunction?:FunctionContext
   // Append statements to parent block (default to create new block)
   newBlock?:BlockId
+  // Value for this (or undefined to inherit from parent scope).
+  //newThis?:BlockInput|null
   continueBlock?:BlockId|null
   breakBlock?:BlockId|null
-  catchBlock?:CatchInfo|null
 }
 
-
-type Var=FunctionVar|GlobalVar
 
 class Scope {
   // Global warnings array
@@ -652,19 +537,19 @@ class Scope {
   // Length of parent chain (used for building references)
   private readonly level: number
 
-  module: Module
+  module: MlirModule
 
   // Information about function
   private function: FunctionContext
 
   // Information from current block.
-  private block: BlockContext
+  block: BlockContext
 
   // Set of identifiers defined in this scope
 //  private readonly identSet: Set<string>
 
   // Value to use when translating "this"
-  thisVar: FunctionVar|null
+  //thisVar: BlockInput|null
 
   // Value that denotes function to invoke with super(...)
   private readonly superMethod:Value|null
@@ -675,64 +560,55 @@ class Scope {
   // Block to jump to for break or null if a break should not be allowed
   private breakBlock:BlockId|null
 
-  //
-  private catchBlock:CatchInfo|null
-
-
-  // Maps string to variables local to function or global symbols
-  //private readonly identMap: Map<string, Var> = new Map()
-
-
-  private readonly lexicalEnvironment: FunctionVar
-
   constructor(parent:Scope|null, config:ScopeConfig) {
     this.warnings = parent ? parent.warnings : new Array<Warning>()
     this.parent = parent
     this.level = parent ? parent.level + 1 : 0
-    this.module = parent ? parent.module : new Module()
+    if (config.newModule) {
+      this.module = config.newModule
+    } else {
+      if (!parent)
+        throw new Error('Expected parent when newModule not set')
+      this.module = parent.module
+    }
+
     if (config.newFunction) {
       this.function = config.newFunction
-      this.lexicalEnvironment = this.function.freshVar('env')
-    } else if (parent) {
-      this.function = parent.function
-      this.lexicalEnvironment = parent.lexicalEnvironment
-    } else {
-      this.function = new FunctionContext(this.module.freshFunctionId('main'))
-      this.lexicalEnvironment = this.function.freshVar('env')
-    }
-
-    if (config.newBlock) {
-      this.block = new BlockContext(this.function.freshBlockId())
+      const blockId = this.function.freshBlockId()
+      this.block = new BlockContext(this.function, blockId, true)
     } else {
       if (!parent) {
-        throw new Error('Expected parent when newBlock not set')
+        throw new Error('Expected parent when newFunction not set')
       }
-      this.block = parent.block
+      this.function = parent.function
+      if (config.newBlock) {
+        this.block = new BlockContext(this.function, config.newBlock)
+      } else {
+        this.block = parent.block
+      }
     }
 
-    this.thisVar
-      = !parent ? this.function.freshVar('this')
-      : config.inheritThis !== false ? parent.thisVar : null
+    /*
+    if (config.newThis !== undefined) {
+      this.thisVar = config.newThis
+    } else {
+      if (!parent)
+        throw new Error('Expected parent when newThis is not set')
+      this.thisVar = parent.thisVar
+    }
+    */
     this.superMethod
-      = config.superMethod !== undefined
-      ? config.superMethod
-      : parent ? parent.superMethod : null
+      = config.superMethod !== undefined ? config.superMethod
+      : parent ? parent.superMethod
+      : null
     this.continueBlock
-      = config.continueBlock !== undefined
-      ? config.continueBlock
-      : parent ? parent.continueBlock : null
+      = config.continueBlock !== undefined ? config.continueBlock
+      : parent ? parent.continueBlock
+      : null
     this.breakBlock
-      = config.breakBlock !== undefined
-      ? config.breakBlock
-      : parent ? parent.breakBlock : null
-    this.catchBlock
-      = config.catchBlock !== undefined
-      ? config.catchBlock
-      : parent ? parent.catchBlock : null
-  }
-
-  addStatement(op:Op):void {
-    this.block.appendStatement(op)
+      = config.breakBlock !== undefined ? config.breakBlock
+      : parent ? parent.breakBlock
+      : null
   }
 
   addWarning(loc:estree.SourceLocation|null|undefined, msg: string) {
@@ -741,41 +617,12 @@ class Scope {
 
   unhandledExpression(e: estree.Expression):Value {
     this.addWarning(e.loc, `Unhandled expression: ${e.type}`)
-    return this.block.undefinedJavascriptValue()
+    return this.block.undefinedValue()
   }
-
 
   unhandledPattern(p:estree.Pattern) {
     this.addWarning(p.loc,`Unhandled pattern: ${p.type}`)
   }
-
-  /*
-  addPatternIdent(p:estree.Pattern):Value {
-    switch (p.type) {
-      case 'Identifier':
-        {
-          const v = this.function.freshVar(p.name)
-          this.block.appendStatement()
-          this.lexicalEnvironment
-
-          this.identMap.set(p.name, v)
-          return this.block.readVar(v)
-        }
-      case 'ObjectPattern':
-      case 'ArrayPattern':
-      case 'RestElement':
-      case 'AssignmentPattern':
-      case 'MemberExpression':
-        {
-          const val = this.block.freshValue()
-          this.unhandledPattern(p)
-          return val
-        }
-      default:
-        return assertNever(p)
-    }
-  }
-  */
 
   translateFunctionExpression(e: estree.FunctionExpression) {
     const ident : estree.Identifier|null|undefined = e.id
@@ -791,7 +638,9 @@ class Scope {
     //  const val = this.addPatternIdent(p) // Value
     //}
 
-    this.translateBlockStatement(e.body)
+    const c = this.translateStatements(e.body.body)
+    if (c)
+      this.block.return(null)
 
     this.module.addFunction(this.function)
   }
@@ -807,7 +656,7 @@ class Scope {
       case "void":
       case "delete":
         this.addWarning(e.loc, `Unsupported unary operator ${e.operator}.`)
-        return this.block.undefinedJavascriptValue()
+        return this.block.undefinedValue()
       default:
         return assertNever(e.operator)
     }
@@ -840,7 +689,7 @@ class Scope {
       case "in":
       case "instanceof":
         this.addWarning(e.loc, `Unsupported binary operator ${e.operator}.`)
-        return this.block.undefinedJavascriptValue()
+        return this.block.undefinedValue()
       default:
         return assertNever(e.operator)
     }
@@ -890,10 +739,7 @@ class Scope {
     const left = e.left
     switch (left.type) {
       case 'Identifier':
-        const env = this.block.readVar(this.lexicalEnvironment)
-        const lref = this.block.freshValue()
-        this.block.appendStatement(new mlirjs.GetIdentifierReference(lref, env, left.name, this.strictMode))
-        this.block.appendStatement(new mlirjs.PutValue(lref, v))
+        this.block.setVariable(left.name, v)
         break
       default:
         this.addWarning(e.loc, `Unsupported assignment left-hand-side ${left.type}.`)
@@ -910,7 +756,7 @@ class Scope {
       case "&&":
       case "??":
         this.addWarning(e.loc, `Unsupported logical expression ${e.operator}`)
-        return this.block.undefinedJavascriptValue()
+        return this.block.undefinedValue()
       default:
         return assertNever(e.operator)
     }
@@ -932,37 +778,46 @@ class Scope {
     switch (e.property.type) {
       case 'Identifier':
         const name = e.property.name
-        return this.block.undefinedJavascriptValue()
+        return this.block.getProperty(o, name)
       default:
         this.addWarning(e.loc, `property ${e.property.type} unsupported`)
-        return this.block.undefinedJavascriptValue()
+        return this.block.undefinedValue()
     }
   }
 
   private translateConditionalExpression(e: estree.ConditionalExpression): Value {
-    const c = this.translateExpression(e.test)
-
-    const v = this.function.freshVar()
-
+    const c = this.block.truthy(this.translateExpression(e.test))
     const trueId = this.function.freshBlockId()
     const falseId = this.function.freshBlockId()
-    const nextBlock = this.function.freshBlockId()
+    const nextBlockId = this.function.freshBlockId()
+
+    this.block.condBranch(c, trueId, falseId)
+
 
     const trueScope = new Scope(this, {newBlock: trueId})
     const trueValue = trueScope.translateExpression(e.consequent)
-    trueScope.block.assign(v, trueValue)
-    trueScope.endBlock(new cf.BranchOp(nextBlock))
+    const trueBlock = trueScope.block
+    const trueArgs = [
+      { value: trueBlock.locals, type: mlirjs.LocalsType },
+      { value: trueValue, type: mlirjs.ValueType }
+    ]
+    trueBlock.endBlock(new cf.BranchOp({id: nextBlockId, args: trueArgs}))
 
     const falseScope = new Scope(this, {newBlock: falseId})
     const falseValue = falseScope.translateExpression(e.alternate)
-    falseScope.block.assign(v, falseValue)
-    falseScope.endBlock(new cf.BranchOp(nextBlock))
+    const falseBlock = falseScope.block
+    const falseArgs = [
+      { value: falseBlock.locals, type: mlirjs.LocalsType },
+      { value: falseValue, type: mlirjs.ValueType }
+    ]
+    falseBlock.endBlock(new cf.BranchOp({id: nextBlockId, args: falseArgs}))
 
-    this.startFreshBlock(new cf.CondBranchOp(c, trueId, falseId), nextBlock)
-
-    return this.block.readVar(v)
+    this.block =  new BlockContext(this.function, nextBlockId)
+    const r = this.block.addBlockInput(mlirjs.ValueType)
+    return r.name
   }
 
+  /*
   translateCallArguments(args: Array<estree.Expression | estree.SpreadElement>): Value {
     const argList = this.block.freshValue()
     for (const arg of args) {
@@ -977,51 +832,58 @@ class Scope {
 
     return argList
   }
+  */
 
-  translateCallExpression(e: estree.CallExpression):Value {
-    var callee:Value
+  translateCallExpression(e: estree.SimpleCallExpression):Value {
+
     if (e.callee.type === 'Super') {
-      if (!this.superMethod)
-        throw new TranslationError(e.callee.loc, 'Super method is undefined')
-      callee = this.superMethod
-    } else {
-      callee = this.translateExpression(e.callee)
+      this.addWarning(e.callee.loc, `Calling super unsupported`)
+      return this.block.undefinedValue()
     }
-    const argList = this.translateCallArguments(e.arguments)
+    const callee = this.translateExpression(e.callee)
+    const args:mlirjs.CallArg[] = []
+    for (const a of e.arguments) {
+      let e:estree.Expression
+      let spread:boolean
+      if (a.type === 'SpreadElement') {
+        e = a.argument
+        spread = true
+      } else {
+        e = a
+        spread = false
+      }
+      args.push({value: this.translateExpression(e), spread: spread})
+    }
+    // Indicates that if callee is null or undefined then we should skip
+    const optional:boolean = e.optional
 
-    const r = this.block.freshValue()
-    this.block.appendStatement(new mlirjs.CallOp(r, callee, argList))
-    return r
+    return this.block.call(callee, args, optional)
   }
 
   translateNewExpression(e: estree.NewExpression):Value {
-    var callee:Value
-    if (e.callee.type === 'Super') {
-      throw new TranslationError(e.callee.loc, 'new super is not defined')
-    } else {
-      callee = this.translateExpression(e.callee)
-    }
-    const argList = this.translateCallArguments(e.arguments)
+    this.addWarning(e.loc, `new expression unsupported`)
+    return this.block.undefinedValue()
+  }
 
-    const r = this.block.freshValue()
-    this.block.appendStatement(new mlirjs.NewOp(r, callee, argList))
-    return r
+  translateIdentifier(e: estree.Identifier): Value {
+    return this.block.getVariable(e.name)
   }
 
   /**
    * Translate a template literal (e.g., `Hello ${var}`)
    */
   translateTemplateLiteral(l: estree.TemplateLiteral): Value {
-    for (const exp of l.expressions) {
-      this.translateExpression(exp)
-    }
-    const r = this.block.freshValue()
-    this.block.appendStatement(new mlirjs.TemplateLiteral(r))
-    return r // FIXME
+    const quasis = l.quasis.map((e) => e.value.raw)
+    const args = l.expressions.map((e) => this.translateExpression(e))
+
+    return this.block.templateLiteral(quasis, args)
   }
 
 
   translateObjectExpression(e:estree.ObjectExpression): Value {
+    this.addWarning(e.loc, `object expression unsupported`)
+    return this.block.undefinedValue()
+    /*
     for (const p of e.properties) {
       switch (p.type) {
         case 'Property':
@@ -1053,33 +915,51 @@ class Scope {
     const r = this.block.freshValue()
     this.block.appendStatement(new mlirjs.ObjectExpression(r))
     return r // FIXME
+    */
   }
 
-  translateLiteral(e: estree.Literal) {
-    return this.unhandledExpression(e)
+  unhandledLiteral(s: string, e: estree.Literal):Value {
+    this.addWarning(e.loc, `Unhandled literal: ${s}`)
+    return this.block.undefinedValue()
+  }
+
+  translateLiteral(e: estree.Literal):Value {
+    switch (typeof e.value) {
+      case 'bigint':
+        return this.unhandledLiteral('bigint', e)
+      case 'boolean':
+        return this.unhandledLiteral('boolean', e)
+      case 'number':
+        return this.block.number(e.value)
+      case 'object':
+        if (e.value instanceof RegExp) {
+          return this.unhandledLiteral('RegExp', e)
+        } else if (e.value === null) {
+          return this.block.null()
+        } else {
+          return assertNever(e.value)
+        }
+      case 'string':
+        return this.block.stringLit(e.value)
+      case 'undefined':
+        return this.block.undefinedValue()
+      default:
+        return assertNever(e.value)
+    }
   }
 
 
   translateExpression(e: estree.Expression):Value {
+    process.stderr.write(`$Translate expr ${e.type}\n`)
     switch (e.type) {
       case 'ThisExpression':
-        if (!this.thisVar)
-          throw new TranslationError(e.loc, `this is undefined`)
-        return this.block.readVar(this.thisVar)
+        return this.unhandledExpression(e)
       case 'ArrayExpression':
         return this.unhandledExpression(e)
       case 'ObjectExpression':
         return this.translateObjectExpression(e)
       case 'FunctionExpression':
-        {
-          const sym = this.module.freshFunctionId(null)
-          const fun = new FunctionContext(sym)
-          const ts = new Scope(this, { newFunction: fun })
-          ts.translateFunctionExpression(e)
-          const r = this.block.freshValue()
-          this.block.appendStatement(new StdConstant(r, sym))
-          return r
-        }
+        return this.unhandledExpression(e)
       case 'ArrowFunctionExpression':
         return this.unhandledExpression(e)
       case 'YieldExpression':
@@ -1113,10 +993,7 @@ class Scope {
       case 'MetaProperty':
         return this.unhandledExpression(e)
       case 'Identifier':
-        {
-          LexicalEnvironment.
-
-        return this.block.readVar(this.lookupVar(e))
+        return this.translateIdentifier(e)
       case 'AwaitExpression':
       case 'ImportExpression':
       case 'ChainExpression':
@@ -1132,15 +1009,15 @@ class Scope {
     this.addWarning(e.loc, `Unhandled statement: ${e.type}`)
   }
 
-  /**
+    /**
    * Translate a block statement
    * @param b Block statement
    * @returns true if we should keep reading
    */
-  translateBlockStatement(b:estree.BlockStatement):boolean {
-    for (const s of b.body) {
-      const b:boolean = this.translateStatement(s)
-      if (!b)
+  translateStatements(stmts:(estree.Directive|estree.Statement|estree.ModuleDeclaration)[]):boolean {
+    for (const s of stmts) {
+      const c = this.translateStatement(s)
+      if (!c)
         return false
     }
     return true
@@ -1158,24 +1035,9 @@ class Scope {
     return {} // FIXME
   }
 
-  endBlock(term:mlir.TerminalOp) {
-    const b = this.block
-    this.function.addBlock({
-      id: b.id,
-      readVars: b.readVars,
-      stmts: b.statements,
-      term: term,
-      assignedVars: b.assignedVars
-    })
-  }
-
-
-  startFreshBlock(term:mlir.TerminalOp, nextBlock:BlockId) {
-    this.endBlock(term)
-    this.block = new BlockContext(nextBlock)
-  }
-
   translateSwitchStatement(s:estree.SwitchStatement) {
+    this.unhandledStatement(s)
+    /*
     this.translateExpression(s.discriminant)
     const cases = new Array<Case>()
     const tests = new Set<CaseTest>()
@@ -1196,9 +1058,9 @@ class Scope {
         }
       }
 
-      if (!terminated)
-        tl.endBlock(new cf.BranchOp(nextBlock))
-
+      if (!terminated) {
+        tl.block.branch(nextBlock)
+      }
       if (test) {
         switch (test.type) {
         case 'Literal':
@@ -1224,80 +1086,30 @@ class Scope {
         defaultCase = caseId
       }
     }
-    this.endBlock(new SwitchStmt(cases, defaultCase ? defaultCase : nextBlock))
-    this.block = new BlockContext(nextBlock)
-  }
-
-  translateFunctionDeclaration(d:estree.FunctionDeclaration) {
-    const id : estree.Identifier | null = d.id
-
-    if (d.generator) {
-      this.addWarning(d.loc, `Generator functions are not yet supported.`)
-    }
-    if (d.async) {
-      this.addWarning(d.loc, `Async functions are not yet supported`)
-    }
-
-    const funId = this.module.freshFunctionId(d.id?d.id.name:null)
-    const tl = new Scope(this, {newFunction: new FunctionContext(funId) });
-    for (const p of d.params) {
-      tl.addPatternIdent(p) // Value
-    }
-    tl.translateBlockStatement(d.body)
-
-    if (id) {
-      if (this.identMap.has(id.name))
-        throw new TranslationError(id.loc, `${id.name} already defined.`)
-      const synVar = this.function.freshVar(id.name)
-      this.identMap.set(id.name, synVar)
-
-//      this.block.assign(this.declareVar(id), value)
-
-  //    this.addIdent(name.name, {})
-    }
-  }
-
-  predefinedVar(name:string): FunctionVar {
-    const synVar = this.function.freshVar(name)
-    this.identMap.set(name, synVar)
-    return synVar
-  }
-
-
-  declareVar(id:estree.Identifier): FunctionVar {
-    if (this.identMap.has(id.name))
-      throw new TranslationError(id.loc, `${id.name} already defined.`)
-    return this.predefinedVar(id.name)
+    this.block.endBlock(new SwitchStmt(cases, defaultCase ? defaultCase : nextBlock))
+    this.block = new BlockContext(this.function, nextBlock)
+    */
   }
 
   translateVariableDeclaration(d:estree.VariableDeclaration) {
     for (const decl of d.declarations) {
       const v = decl.init
-      const value = v ? this.translateExpression(v) : this.block.undefinedJavascriptValue()
+      const value : Value|undefined = v ? this.translateExpression(v) : undefined
       const id = decl.id
       switch (id.type) {
         case 'Identifier':
-          this.block.assign(this.declareVar(id), value)
+          this.block.declVariable(d.kind, id.name, value)
           break;
         case 'ObjectPattern':
         case 'ArrayPattern':
         case 'RestElement':
         case 'AssignmentPattern':
         case 'MemberExpression':
-          this.addWarning(id.loc, `Parameter ${id.type} unsupported`)
+          this.addWarning(id.loc, `Variable declaration ${id.type} unsupported`)
           break
       }
     }
   }
-
-  /*
-  interface FunctionInfo {
-    scope: Scope
-    symbol: mlir.Symbol
-    superClass : Value|null
-  }
-  */
-
 
   translateClassDeclaration(d:estree.ClassDeclaration) {
     var superClass : Value|null
@@ -1317,11 +1129,10 @@ class Scope {
             case 'constructor':
               assert(!b.static)
               assert(!b.computed)
-              assert(b.key.type === 'Identifier' && b.key.name === 'constructor')
 
               const fun = new FunctionContext(ctor)
               const ts = new Scope(this, { newFunction: fun, superMethod: superClass })
-              ts.thisVar = fun.freshVar('this')
+              //ts.thisVar = { varId: fun.freshValue('this') }
               ts.translateFunctionExpression(b.value)
               break
             case 'method':
@@ -1333,7 +1144,7 @@ class Scope {
                 const methodRef = this.module.freshFunctionId(`${ctor.name}_${b.key.name}`)
                 const fun = new FunctionContext(methodRef)
                 const ts = new Scope(this, { newFunction: fun })
-                ts.thisVar = b.static ? null : fun.freshVar('this')
+                //ts.thisVar = b.static ? null : { varId: fun.freshValue('this') }
                 ts.translateFunctionExpression(b.value)
               }
               break
@@ -1375,40 +1186,40 @@ class Scope {
   translateBreakStatement(s:estree.BreakStatement) {
     if (!this.breakBlock)
       throw new TranslationError(s.loc, `'break' appears out of scope.`)
-    this.endBlock(new cf.BranchOp(this.breakBlock))
+    this.block.branch(this.breakBlock)
   }
 
   translateContinueStatement(s:estree.ContinueStatement) {
     if (!this.continueBlock)
       throw new TranslationError(s.loc, `'continue' appears out of scope.`)
-    this.endBlock(new cf.BranchOp(this.continueBlock))
+    this.block.branch(this.continueBlock)
   }
 
   // Translate return statement
   translateReturnStatement(s:estree.ReturnStatement) {
-    const v = s.argument ? [{value : this.translateExpression(s.argument), type: 'FIXME'}] : []
-    this.endBlock(new ReturnOp(v))
+    const v = s.argument
+      ? this.translateExpression(s.argument)
+      : null
+    this.block.return(v)
   }
 
   translateTryStatement(s:estree.TryStatement):boolean {
+    this.unhandledStatement(s)
+    return true
+    /*
     const blockScope:Scope = new Scope(this, {})
-    var c = blockScope.translateBlockStatement(s.block)
+    var c = blockScope.translateStatements(s.block.body)
 
     if (s.handler) {
-      const h = s.handler
-      const handlerScope = new Scope(this, {})
-      if (h.param)
-        handlerScope.addPatternIdent(h.param)
-
-      const hContinue = handlerScope.translateBlockStatement(h.body)
-      if (hContinue)
-        c = true
+      this.addWarning(s.handler.loc, `Try exception handler unsupported.`)
+      c = true
     }
     if (s.finalizer) {
-      const finalizerScope = new Scope(this, {})
-      finalizerScope.translateBlockStatement(s.finalizer)
+      this.addWarning(s.finalizer.loc, `Try finalizer unsupported.`)
+      c = true
     }
     return c
+    */
   }
 
   checkTopLevel(loc:estree.SourceLocation|undefined|null, msg: string):any {
@@ -1416,58 +1227,49 @@ class Scope {
       throw new TranslationError(loc,  msg)
   }
 
-  translateThrowStatement(s: estree.ThrowStatement) {
-    const a = this.translateExpression(s.argument)
-    if (this)
-    this.endBlock(new ThrowOp(a))
-  }
-
-  // End the current block with a jump to a fresh block id
-  // Return id of this block
-  endBlockWithJumpToFresh():BlockId {
-    const blockId = this.function.freshBlockId()
-    this.startFreshBlock(new cf.BranchOp(blockId), blockId)
-    return blockId
-  }
-
   private translateWhileStatement(s: estree.WhileStatement) {
 
-
-    const testId = this.endBlockWithJumpToFresh()
-    const v = this.translateExpression(s.test)
+    const testId = this.function.freshBlockId()
+    const bodyId = this.function.freshBlockId()
     const nextId = this.function.freshBlockId()
 
-    this.startFreshBlock(new cf.CondBranchOp(v, testId, nextId), nextId)
+    this.block.branch(testId)
 
-    let scope = new Scope(this, {breakBlock: nextId, continueBlock: testId})
+    const testBlock = new BlockContext(this.function, testId)
+    this.block = testBlock
+    const c = testBlock.truthy(this.translateExpression(s.test))
+    testBlock.condBranch(c, bodyId, nextId)
+
+    let scope = new Scope(this, {newBlock: bodyId, breakBlock: nextId, continueBlock: testId})
     const b = scope.translateStatement(s.body)
     if (b) {
-      this.endBlock(new cf.BranchOp(testId))
+      scope.block.branch(testId)
     }
 
-
+    this.block = new BlockContext(this.function, nextId)
   }
 
   translateDoWhileStatement(s: estree.DoWhileStatement) {
-
+    this.addWarning(s.loc, `Do while unsupported.`)
   }
 
   translateForStatement(s: estree.ForStatement) {
-
+    this.addWarning(s.loc, `For unsupported.`)
   }
 
   translateForInStatement(s: estree.ForInStatement) {
-
+    this.addWarning(s.loc, `For in unsupported.`)
   }
 
   translateForOfStatement(s: estree.ForOfStatement) {
-
+    this.addWarning(s.loc, `For of unsupported.`)
   }
 
   /**
    * Process declarations and ensure they are added to environment.
    * @param s Declaration to add.
    */
+/*
   processDeclarations(s: estree.Directive| estree.Statement | estree.ModuleDeclaration) {
     switch (s.type) {
       case 'ClassDeclaration':
@@ -1485,6 +1287,7 @@ class Scope {
         break
     }
   }
+  */
 
   /**
    * Translate a directive, statement or module declaration by appending to current block.
@@ -1519,7 +1322,7 @@ class Scope {
       case 'BlockStatement':
         {
           const tl = new Scope(this, {})
-          const c = tl.translateBlockStatement(s)
+          const c = tl.translateStatements(s.body)
           return c
         }
       case 'EmptyStatement':
@@ -1550,7 +1353,7 @@ class Scope {
         this.translateSwitchStatement(s)
         return true
       case 'ThrowStatement':
-        this.translateThrowStatement(s)
+        this.unhandledStatement(s)
         return false
       case 'TryStatement':
         return this.translateTryStatement(s)
@@ -1571,7 +1374,10 @@ class Scope {
         return true
       // Declaration
       case 'FunctionDeclaration':
-        this.translateFunctionDeclaration(s)
+        this.unhandledStatement(s)
+        return true
+      case 'StaticBlock':
+        this.unhandledStatement(s)
         return true
       case 'VariableDeclaration':
         this.translateVariableDeclaration(s)
@@ -1596,6 +1402,7 @@ class Scope {
         this.checkTopLevel(s.loc, `Exportall expected only at top level.`)
         this.addWarning(s.loc, `Unhandled ${s.type}`)
         return true
+
       default:
         return assertNever(s)
     }
@@ -1638,24 +1445,15 @@ try {
       process.stderr.write('Please specify whether script or module.\n')
       process.exit(-1)
   }
+  const module = new MlirModule()
+  const main = new FunctionContext(module.freshFunctionId('script_main'))
 
-  const tl = new Scope(null, {})
-  tl.predefinedVar('process')
-  tl.predefinedVar('undefined')
-  tl.predefinedVar('exports')
-  tl.predefinedVar('require')
-  tl.predefinedVar('console')
+  const tl = new Scope(null, {newModule: module, newFunction: main})
+  const c = tl.translateStatements(s.body)
+  if (c)
+    tl.block.return(null)
 
-  tl.predefinedVar('Array')
-  tl.predefinedVar('Error')
-  tl.predefinedVar('JSON')
-  tl.predefinedVar('Map')
-  tl.predefinedVar('Object')
-  tl.predefinedVar('Set')
-  s.body.forEach(d => tl.processDeclarations(d))
-  for (const d of s.body) {
-    tl.translateStatement(d)
-  }
+  module.ops.push(main.getFunction())
   for (const w of tl.warnings) {
     process.stderr.write(`${formatWarning(w)}\n`)
   }

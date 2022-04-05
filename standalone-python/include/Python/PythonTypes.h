@@ -9,7 +9,7 @@
 
 namespace mlir {
 namespace python {
-/// This class represents the base class of all PDL types.
+/// This class represents the base class of all Python types.
 class PythonType : public Type {
 public:
   using Type::Type;

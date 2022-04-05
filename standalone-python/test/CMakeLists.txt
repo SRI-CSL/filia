@@ -1,6 +1,7 @@
 llvm_canonicalize_cmake_booleans(
         MLIR_ENABLE_BINDINGS_PYTHON
 )
+enable_testing()
 
 configure_lit_site_cfg(
         ${CMAKE_CURRENT_SOURCE_DIR}/lit.site.cfg.py.in
@@ -27,3 +28,4 @@ set_target_properties(check-python PROPERTIES FOLDER "Tests")
 add_lit_testsuites(PYTHON ${CMAKE_CURRENT_SOURCE_DIR} DEPENDS ${PYTHON_TEST_DEPENDS})
 
 add_subdirectory(CAPI)
+add_subdirectory(script-test)

@@ -20,10 +20,6 @@ def Python_Dialect : Dialect {
     let cppNamespace = "::mlir::python";
 }
 
-
-def PythonIsValueTypePred : CPred<"$_self.isa<ValueType>()">;
-def ValueType : DialectType<Python_Dialect, PythonIsValueTypePred, "value">;
-
 //===----------------------------------------------------------------------===//
 // Base python operation definition.
 //===----------------------------------------------------------------------===//

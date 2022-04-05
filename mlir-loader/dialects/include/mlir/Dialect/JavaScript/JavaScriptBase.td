@@ -21,9 +21,4 @@ def JavaScript_Dialect : Dialect {
 //  let emitAccessorPrefix = kEmitAccessorPrefix_Prefixed;
 }
 
-
-// Whether a type is a RangeType.
-def JavaScriptIsValueTypePred : CPred<"$_self.isa<ValueType>()">;
-def ValueType : DialectType<JavaScript_Dialect, JavaScriptIsValueTypePred, "value">;
-
 #endif // JAVASCRIPT_BASE

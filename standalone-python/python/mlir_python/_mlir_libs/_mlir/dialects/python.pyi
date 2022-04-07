@@ -21,3 +21,10 @@ class ValueType(Type):
 
   @staticmethod
   def get(context: Optional[Context] = None) -> ValueType: ...
+
+class ScopeType(Type):
+  @staticmethod
+  def isinstance(type: Type) -> bool: ...
+
+  @staticmethod
+  def get(context: Optional[Context] = None) -> ValueType: ...

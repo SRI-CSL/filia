@@ -19,8 +19,8 @@ def Python_Value : Python_Type<"Value", "value"> {
   }];
 }
 
-def Python_Locals : Python_Type<"Locals", "locals"> {
-  let summary = "Mapping from variable names to the value";
+def Python_Scope : Python_Type<"Scope", "scope"> {
+  let summary = "A scope maps names to the values.";
   let description = [{
     This type represents a mapping from Python variable names to values.
   }];

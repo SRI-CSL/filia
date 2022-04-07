@@ -27,3 +27,11 @@ bool mlirTypeIsAPythonValueType(MlirType type) {
 MlirType mlirPythonValueTypeGet(MlirContext ctx) {
   return wrap(python::ValueType::get(unwrap(ctx)));
 }
+
+bool mlirTypeIsAPythonScopeType(MlirType type) {
+  return unwrap(type).isa<python::ScopeType>();
+}
+
+MlirType mlirPythonScopeTypeGet(MlirContext ctx) {
+  return wrap(python::ScopeType::get(unwrap(ctx)));
+}

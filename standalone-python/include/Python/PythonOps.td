@@ -13,7 +13,7 @@ include "mlir/IR/OpBase.td"
 def Python_BuiltinEval: StrEnumAttrCase<"eval">;
 def Python_BuiltinGetAttr: StrEnumAttrCase<"getattr">;
 
-def Python_BuiltinAttr: StrEnumAttr<"BuiltinAttr", "", [
+def Python_BuiltinAttr : StrEnumAttr<"BuiltinAttr", "", [
         Python_BuiltinEval,
         Python_BuiltinGetAttr,
         StrEnumAttrCase<"open">,
@@ -22,33 +22,51 @@ def Python_BuiltinAttr: StrEnumAttr<"BuiltinAttr", "", [
     let cppNamespace = "::mlir::python";
 }
 
-def Python_EmptyLocals : Python_Op<"empty_locals", [NoSideEffect]> {
-    let summary = "Create an empty local table";
+def Python_ScopeInit : Python_Op<"scope_init", [NoSideEffect]> {
+    let summary = "Create an empty scope.";
     let description = [{
-        This creates an empty local table.
+        This creates an initial empty scope.
     }];
-    let results = (outs Python_Locals:$result);
+    let results = (outs Python_Scope:$result);
     let assemblyFormat = "attr-dict `:` type($result)";
 }
 
-def Python_LocalSet : Python_Op<"local_set", [NoSideEffect]> {
-    let summary = "Define a variable in a local map.";
+def Python_ScopeExtend : Python_Op<"scope_extend", [NoSideEffect]> {
+    let summary = "Create a scope that extends an existing one";
     let description = [{
-        This binds a variable in a local table.
+        This creates an empty scope that extends a current one.
     }];
-    let arguments = (ins Python_Locals:$map, StrAttr:$name, Python_Value:$value);
-    let results = (outs Python_Locals:$result);
-    let assemblyFormat = "$map `,` $name `,` $value attr-dict `:` type($result)";
+    let arguments = (ins Python_Scope:$scope);
+    let results = (outs Python_Scope:$result);
+    let assemblyFormat = "$scope attr-dict `:` type($result)";
 }
 
-def Python_Get : Python_Op<"get", [NoSideEffect]> {
+def Python_ScopeImport : Python_Op<"scope_import", []> {
+    let summary = "Import a module into the scope.";
+    let description = [{
+        This binds a variable in a scope table.
+    }];
+    let arguments = (ins Python_Scope:$scope, StrAttr:$module, StrAttr:$asName);
+    let assemblyFormat = "$scope `,` $module `,` $asName attr-dict";
+}
+
+def Python_ScopeSet : Python_Op<"scope_set", []> {
+    let summary = "Define a variable in a scope.";
+    let description = [{
+        This binds a variable in a scope table.
+    }];
+    let arguments = (ins Python_Scope:$scope, StrAttr:$name, Python_Value:$value);
+    let assemblyFormat = "$scope `,` $name `,` $value attr-dict";
+}
+
+def Python_ScopeGet : Python_Op<"scope_get", []> {
     let summary = "Get value of a variable in local/global map.";
     let description = [{
         This gets a variable in the map.
     }];
-    let arguments = (ins Python_Locals:$map, StrAttr:$name);
+    let arguments = (ins Python_Scope:$scope, StrAttr:$name);
     let results = (outs Python_Value:$result);
-    let assemblyFormat = "$map `,` $name attr-dict `:` type($result)";
+    let assemblyFormat = "$scope `,` $name attr-dict `:` type($result)";
 }
 
 def Python_NoneOp : Python_Op<"none", [NoSideEffect]> {
@@ -60,7 +78,6 @@ def Python_NoneOp : Python_Op<"none", [NoSideEffect]> {
     let results = (outs Python_Value:$result);
     let assemblyFormat = "attr-dict `:` type($result)";
 }
-
 
 def Python_UndefinedOp : Python_Op<"undefined", [NoSideEffect]> {
     let summary = "Introduces an undefined Python value.";
@@ -81,17 +98,6 @@ def Python_UndefinedOp : Python_Op<"undefined", [NoSideEffect]> {
     let assemblyFormat = "attr-dict `:` type($result)";
 }
 
-def Python_IntLit : Python_Op<"intlit", [NoSideEffect]> {
-    let summary = "An integer literal.";
-    let description = [{
-        FIXME
-    }];
-
-    let arguments = (ins SI64Attr:$val);
-    let results = (outs Python_Value:$result);
-    let assemblyFormat = "$val attr-dict `:` type($result)";
-}
-
 def Python_Builtin : Python_Op<"builtin", [NoSideEffect]> {
     let summary = "A reference to a builtin function.";
     let description = [{
@@ -99,6 +105,17 @@ def Python_Builtin : Python_Op<"builtin", [NoSideEffect]> {
     }];
 
     let arguments = (ins Python_BuiltinAttr:$val);
+    let results = (outs Python_Value:$result);
+    let assemblyFormat = "$val attr-dict `:` type($result)";
+}
+
+def Python_IntLit : Python_Op<"intlit", [NoSideEffect]> {
+    let summary = "An integer literal.";
+    let description = [{
+        FIXME
+    }];
+
+    let arguments = (ins SI64Attr:$val);
     let results = (outs Python_Value:$result);
     let assemblyFormat = "$val attr-dict `:` type($result)";
 }
@@ -130,7 +147,7 @@ def Python_Invoke : Python_Op<"invoke", []> {
     let description = [{
         Operation that invokes a Python method
     }];
-    let arguments = (ins Python_Value:$callee, Variadic<Python_Value>:$args);
+    let arguments = (ins Python_Value:$callee, Variadic<Python_Value>:$args, OptionalAttr<ArrayAttr>:$keywords);
     let results = (outs Python_Value:$result);
     let assemblyFormat = "$callee `(` $args `)` attr-dict `:` type($result)";
 }
@@ -143,6 +160,35 @@ def Python_FormattedString : Python_Op<"formattedstring", []> {
     let arguments = (ins Variadic<Python_Value>:$args);
     let results = (outs Python_Value:$result);
     let assemblyFormat = "`(` $args `)` attr-dict `:` type($result)";
+}
+
+def Python_Truthy : Python_Op<"truthy", [NoSideEffect]> {
+    let summary = "Predicate that checks if a value is truthy.";
+    let description = [{
+        Checks if value is one considered truthy in Python
+    }];
+    let arguments = (ins Python_Value:$val);
+    let results = (outs I1:$result);
+    let assemblyFormat = "$val attr-dict `:` type($result)";
+}
+
+def Python_TupleCheck : Python_Op<"tuple_check", []> {
+    let summary = "Predicate that checks if a value is a tuple.";
+    let description = [{
+        Checks if value is a tuple with the given arity.
+    }];
+    let arguments = (ins Python_Value:$value, SI64Attr:$arity);
+    let assemblyFormat = "$value `,` $arity attr-dict";
+}
+
+def Python_TupleGet : Python_Op<"tuple_get", []> {
+    let summary = "Predicate that gets a value with given index from tuple.";
+    let description = [{
+        Get a value from tuple (undefined if value is not a tuple or index is invalid)
+    }];
+    let arguments = (ins Python_Value:$value, SI64Attr:$idx);
+    let results = (outs Python_Value:$result);
+    let assemblyFormat = "$value `,` $idx attr-dict `:` type($result)";
 }
 
 #endif // PYTHON_OPS

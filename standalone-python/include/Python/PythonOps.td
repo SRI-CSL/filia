@@ -10,14 +10,56 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/IR/EnumAttr.td"
 include "mlir/IR/OpBase.td"
 
-def Python_BuiltinEval: StrEnumAttrCase<"eval">;
-def Python_BuiltinGetAttr: StrEnumAttrCase<"getattr">;
+class Python_BinOp<string mnemonic> :
+        Python_Op<mnemonic, [AttrSizedOperandSegments,Terminator]> {
+    let arguments = (ins Python_Value: $lhs,
+                         Python_Value: $rhs,
+                         Variadic<AnyType>:$returnDestOperands,
+                         Variadic<AnyType>:$exceptDestOperands
+                     );
+    let successors = (successor AnySuccessor:$returnDest, AnySuccessor:$exceptDest);
+    let assemblyFormat = [{
+      $lhs `,` $rhs `,`
+      $returnDest (`(` $returnDestOperands^ `:` type($returnDestOperands) `)`)? `,`
+      $exceptDest (`(` $exceptDestOperands^ `:` type($exceptDestOperands) `)`)?
+      attr-dict
+    }];
+}
+
+// Infix operators
+def Python_AddOp      : Python_BinOp<"add">;
+def Python_BitAndOp   : Python_BinOp<"bit_and">;
+def Python_BitOrOp    : Python_BinOp<"bit_or">;
+def Python_BitXorOp   : Python_BinOp<"bit_xor">;
+def Python_DivOp      : Python_BinOp<"div">;
+def Python_FloorDivOp : Python_BinOp<"floor_div">;
+def Python_LShiftOp   : Python_BinOp<"lshift">;
+def Python_ModOp      : Python_BinOp<"mod">;
+def Python_MultOp     : Python_BinOp<"mult">;
+def Python_MatMultOp  : Python_BinOp<"mat_mult">;
+def Python_PowOp      : Python_BinOp<"pow">;
+def Python_RShiftOp   : Python_BinOp<"rshift">;
+def Python_SubOp      : Python_BinOp<"sub">;
+
+// Comparison operators
+def Python_EqOp    : Python_BinOp<"eq">;
+def Python_GtOp    : Python_BinOp<"gt">;
+def Python_GtEOp   : Python_BinOp<"gte">;
+def Python_InOp    : Python_BinOp<"in">;
+def Python_IsOp    : Python_BinOp<"is">;
+def Python_IsNotOp : Python_BinOp<"is_not">;
+def Python_LtOp    : Python_BinOp<"lt">;
+def Python_LtEOp   : Python_BinOp<"lte">;
+def Python_NotEqOp : Python_BinOp<"not_eq">;
+def Python_NotInOp : Python_BinOp<"not_in">;
 
 def Python_BuiltinAttr : StrEnumAttr<"BuiltinAttr", "", [
-        Python_BuiltinEval,
-        Python_BuiltinGetAttr,
+        StrEnumAttrCase<"eval">,
+        StrEnumAttrCase<"getattr">,
+        StrEnumAttrCase<"isinstance">,
         StrEnumAttrCase<"open">,
-        StrEnumAttrCase<"print">
+        StrEnumAttrCase<"print">,
+        StrEnumAttrCase<"slice">
     ]> {
     let cppNamespace = "::mlir::python";
 }
@@ -109,13 +151,24 @@ def Python_Builtin : Python_Op<"builtin", [NoSideEffect]> {
     let assemblyFormat = "$val attr-dict `:` type($result)";
 }
 
-def Python_IntLit : Python_Op<"intlit", [NoSideEffect]> {
+def Python_S64Lit : Python_Op<"intlit", [NoSideEffect]> {
     let summary = "An integer literal.";
     let description = [{
         FIXME
     }];
 
     let arguments = (ins SI64Attr:$val);
+    let results = (outs Python_Value:$result);
+    let assemblyFormat = "$val attr-dict `:` type($result)";
+}
+
+def Python_IntLit : Python_Op<"u64lit", [NoSideEffect]> {
+    let summary = "An integer literal.";
+    let description = [{
+        FIXME
+    }];
+
+    let arguments = (ins StrAttr:$val);
     let results = (outs Python_Value:$result);
     let assemblyFormat = "$val attr-dict `:` type($result)";
 }
@@ -142,20 +195,72 @@ def Python_GetMethod : Python_Op<"getmethod", []> {
     let assemblyFormat = "$obj `,` $method attr-dict `:` type($result)";
 }
 
-def Python_Invoke : Python_Op<"invoke", []> {
+def Python_Invoke : Python_Op<"invoke", [
+      AttrSizedOperandSegments,Terminator
+    ]> {
     let summary = "Invoke a Python method";
     let description = [{
         Operation that invokes a Python method
     }];
-    let arguments = (ins Python_Value:$callee, Variadic<Python_Value>:$args, OptionalAttr<ArrayAttr>:$keywords);
-    let results = (outs Python_Value:$result);
-    let assemblyFormat = "$callee `(` $args `)` attr-dict `:` type($result)";
+    let arguments = (ins Python_Value:$callee,
+                     Variadic<Python_Value>:$args,
+                     OptionalAttr<ArrayAttr>:$keywords,
+                     Variadic<AnyType>:$returnDestOperands,
+                     Variadic<AnyType>:$exceptDestOperands
+                     );
+
+    let successors = (successor AnySuccessor:$returnDest, AnySuccessor:$exceptDest);
+    let assemblyFormat = [{
+      $callee `(` $args `)` `,`
+      $returnDest (`(` $returnDestOperands^ `:` type($returnDestOperands) `)`)? `,`
+      $exceptDest (`(` $exceptDestOperands^ `:` type($exceptDestOperands) `)`)?
+      attr-dict
+    }];
+}
+
+def Python_Throw : Python_Op<"throw", [Terminator]> {
+    let summary = "Throw a Python exception.";
+    let description = [{
+        Operation that invokes a Python method
+    }];
+    let arguments = (ins Python_Value:$except);
+    let assemblyFormat = "$except attr-dict";
+}
+
+def Python_IsInstance : Python_Op<"isinstance", [NoSideEffect]> {
+    let summary = "Test if value matches an instance.";
+    let description = [{
+        Operation that test if a value is an instance.
+    }];
+    let arguments = (ins Python_Value:$value, StrAttr:$classname);
+    let results = (outs I1:$result);
+    let assemblyFormat = "$value `,` $classname attr-dict `:` type($result)";
 }
 
 def Python_FormattedString : Python_Op<"formattedstring", []> {
     let summary = "An interpolated string";
     let description = [{
         Operation that evaluates an interpolated string (see PEP 498).
+    }];
+    let arguments = (ins Variadic<Python_Value>:$args);
+    let results = (outs Python_Value:$result);
+    let assemblyFormat = "`(` $args `)` attr-dict `:` type($result)";
+}
+
+def Python_List : Python_Op<"list", []> {
+    let summary = "Construct a list.";
+    let description = [{
+        Constructs a list from a list of arguments.
+    }];
+    let arguments = (ins Variadic<Python_Value>:$args);
+    let results = (outs Python_Value:$result);
+    let assemblyFormat = "`(` $args `)` attr-dict `:` type($result)";
+}
+
+def Python_Tuple : Python_Op<"tuple", []> {
+    let summary = "Construct a tuple.";
+    let description = [{
+        Constructs a tuple from a list of arguments.
     }];
     let arguments = (ins Variadic<Python_Value>:$args);
     let results = (outs Python_Value:$result);

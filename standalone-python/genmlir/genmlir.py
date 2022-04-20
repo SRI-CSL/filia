@@ -68,12 +68,32 @@ def truthy(block: mlir.Block, x: mlir.Value) -> mlir.Value:
 
 
 class Module:
+
     def __init__(self, mlir:mlir.Module):
         self.mlir = mlir
+        self.vars = {}
+
+    # Ensure a symbol has a fresh name.
+    def fresh_symbol(self, nm: str|None) -> str:
+        if nm == None:
+            nm = "_mlir_gen"
+        else:
+            # Strip out @ sign as it is used for marking count.
+            nm = nm.replace('@', '')
+            if nm == "":
+                nm = "_mlir_gen"
+        cnt = self.vars.get(nm)
+        if cnt == None:
+            self.vars[nm] = 0
+            return nm
+        else:
+            self.vars[nm] = cnt + 1
+            return f'{nm}@{cnt}'
 
 class Analyzer(ast.NodeVisitor):
 
     def __init__(self, m: Module):
+        self.module = m
         self.block = None
         self.map = None
         self.onDone = None
@@ -163,6 +183,49 @@ class Analyzer(ast.NodeVisitor):
     def load_value_attribute(self, v: mlir.Value, attr: str):
         get = self.builtin("getattr")
         return self.invoke(get, [v, self.string_constant(attr)])
+
+    def returnOp(self, v: mlir.Value):
+        with mlir.InsertionPoint(self.block):
+            func_d.ReturnOp([v])
+
+    def create_fun(self, name: str, args: ast.arguments):
+        scopeType = python_d.ScopeType.get()
+        valueType = python_d.ValueType.get()
+
+        assert(args.vararg == None)
+        assert(len(args.kwonlyargs) == 0)
+        assert(len(args.kw_defaults) == 0)
+        assert(args.kwarg == None)
+        assert(len(args.defaults) == 0)
+        arg_count = len(args.args)
+
+        symbol_name = self.module.fresh_symbol(name)
+
+        with mlir.InsertionPoint(self.module.mlir.body):
+            argTypes = [scopeType] + arg_count * [valueType]
+            tp = mlir.FunctionType.get(argTypes, [valueType])
+            fun = builtin_d.FuncOp(symbol_name, tp)
+
+        fun_analyzer = Analyzer(self.module)
+        fun_analyzer.block = mlir.Block.create_at_start(fun.regions[0], argTypes)
+
+        with mlir.InsertionPoint(fun_analyzer.block):
+            fun_analyzer.map = python_d.ScopeExtend(fun_analyzer.block.arguments[0])
+
+        # Initialize scope from function arguments.
+        arg_names = []
+        for i in range(arg_count):
+            name = args.args[i].arg
+            value = fun_analyzer.block.arguments[1+i]
+            arg_names.append(mlir.StringAttr.get(name))
+            scope_set(fun_analyzer.block, fun_analyzer.map, name, value)
+
+        symbol_attr = mlir.FlatSymbolRefAttr.get(symbol_name)
+        arg_attrs = mlir.ArrayAttr.get(arg_names)
+        with mlir.InsertionPoint(self.block):
+            fun_value = python_d.FunctionRef(symbol_attr, arg_attrs, self.map)
+
+        return fun_analyzer, fun_value
 
     # Expressions
     def checked_visit_expr(self, e: ast.expr) -> mlir.Value:
@@ -298,7 +361,9 @@ class Analyzer(ast.NodeVisitor):
         return self.joined_string(args)
 
     def visit_Lambda(self, e: ast.Lambda) -> mlir.Value:
-        return self.undef_value(e) # FIXME
+        funAnalyzer, fun_value = self.create_fun("_lambda", e.args)
+        funAnalyzer.returnOp(funAnalyzer.checked_visit_expr(e.body))
+        return fun_value
 
     def visit_List(self, e: ast.List) -> mlir.Value:
         args = map(self.checked_visit_expr, e.elts)
@@ -375,8 +440,8 @@ class Analyzer(ast.NodeVisitor):
         with mlir.InsertionPoint(self.block):
             return python_d.Tuple(args)
 
-#    def visit_UnaryOp(self, e: ast.UnaryOp) -> mlir.Value:
-#        return self.undef_value(e) # FIXME
+    def visit_UnaryOp(self, e: ast.UnaryOp) -> mlir.Value:
+        return self.undef_value(e) # FIXME
 
     # Statements
     def checked_visit_stmt(self, e: ast.stmt):
@@ -434,29 +499,13 @@ class Analyzer(ast.NodeVisitor):
         return True
 
     def visit_FunctionDef(self, s: ast.FunctionDef):
-        scopeType = python_d.ScopeType.get()
-        valueType = python_d.ValueType.get()
-        with mlir.InsertionPoint(self.m.body):
-            tp = mlir.FunctionType.get([scopeType], [valueType])
-            fun = builtin_d.FuncOp(s.name, tp) # FIXME: Use a name generator to avoid collisions
-
-        funAnalyzer = Analyzer(self.m)
-        funAnalyzer.block = mlir.Block.create_at_start(fun.regions[0], [scopeType])
-
-        with mlir.InsertionPoint(funAnalyzer.block):
-            funAnalyzer.map = python_d.ScopeExtend(funAnalyzer.block.arguments[0])
+        funAnalyzer, fun_value = self.create_fun(s.name, s.args)
 
         cont = funAnalyzer.visitStmts(s.body)
         if cont:
-            with mlir.InsertionPoint(funAnalyzer.block):
-                func_d.ReturnOp([funAnalyzer.none_value()])
+            funAnalyzer.returnOp(funAnalyzer.none_value())
 
-    name: _identifier
-    args: arguments
-    body: list[stmt]
-    decorator_list: list[expr]
-    returns: expr | None
-
+        scope_set(self.block, self.map, s.name, fun_value)
 
         return True
 
@@ -501,12 +550,11 @@ class Analyzer(ast.NodeVisitor):
             self.onDone()
 
         if node.value != None:
-            rets = [self.checked_visit_expr(node.value)]
+            ret = self.checked_visit_expr(node.value)
         else:
-            rets = []
+            ret = self.funAnalyzer.none_value()
+        self.returnOp(ret)
 
-        with mlir.InsertionPoint(self.block):
-            func_d.ReturnOp(rets)
         return False
 
     # See https://docs.python.org/3/reference/compound_stmts.html#with
@@ -538,7 +586,7 @@ class Analyzer(ast.NodeVisitor):
         return cont
 
     def visit_Module(self, m: ast.Module):
-        with mlir.InsertionPoint(self.m.body):
+        with mlir.InsertionPoint(self.module.mlir.body):
             tp = mlir.FunctionType.get([], [])
             script_main = builtin_d.FuncOp("script_main", tp)
 
@@ -591,7 +639,7 @@ def main():
         python_d.register_dialect()
 #        ctx.allow_unregistered_dialects = True
         m = mlir.Module.create()
-        analyzer = Analyzer(m)
+        analyzer = Analyzer(Module(m))
         r = analyzer.visit(tree)
     assert (r is not None)
     print(str(m))

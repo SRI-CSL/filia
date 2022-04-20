@@ -296,4 +296,11 @@ def Python_TupleGet : Python_Op<"tuple_get", []> {
     let assemblyFormat = "$value `,` $idx attr-dict `:` type($result)";
 }
 
+def Python_FunctionRef : Python_Op<"function_ref", []> {
+    let summary = "Create a Python value referencing a function.";
+    let arguments = (ins SymbolRefAttr:$fun, ArrayAttr:$arg_names, Python_Scope:$scope);
+    let results = (outs Python_Value:$result);
+    let assemblyFormat = "$fun `(` $arg_names `)` $scope attr-dict `:` type($result)";
+}
+
 #endif // PYTHON_OPS

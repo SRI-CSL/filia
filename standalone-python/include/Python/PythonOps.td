@@ -10,6 +10,21 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/IR/EnumAttr.td"
 include "mlir/IR/OpBase.td"
 
+class Python_UnaryOp<string mnemonic> :
+        Python_Op<mnemonic, [AttrSizedOperandSegments,Terminator]> {
+    let arguments = (ins Python_Value: $arg,
+                         Variadic<AnyType>:$returnDestOperands,
+                         Variadic<AnyType>:$exceptDestOperands
+                     );
+    let successors = (successor AnySuccessor:$returnDest, AnySuccessor:$exceptDest);
+    let assemblyFormat = [{
+      $arg `,`
+      $returnDest (`(` $returnDestOperands^ `:` type($returnDestOperands) `)`)? `,`
+      $exceptDest (`(` $exceptDestOperands^ `:` type($exceptDestOperands) `)`)?
+      attr-dict
+    }];
+}
+
 class Python_BinOp<string mnemonic> :
         Python_Op<mnemonic, [AttrSizedOperandSegments,Terminator]> {
     let arguments = (ins Python_Value: $lhs,
@@ -25,6 +40,12 @@ class Python_BinOp<string mnemonic> :
       attr-dict
     }];
 }
+
+// Unary operators
+def Python_InvertOp : Python_UnaryOp<"invert">;
+def Python_NotOp : Python_UnaryOp<"not">;
+def Python_UAddOp : Python_UnaryOp<"uadd">;
+def Python_USubOp : Python_UnaryOp<"usub">;
 
 // Infix operators
 def Python_AddOp      : Python_BinOp<"add">;

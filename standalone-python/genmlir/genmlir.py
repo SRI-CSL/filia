@@ -245,8 +245,7 @@ class Analyzer(ast.NodeVisitor):
         else:
             raise Exception(f'Unknown context {type(a.ctx)}')
 
-    # FIXME Make static
-    operator_map = {
+    bin_operator_map = {
         ast.Add: python_d.AddOp,
         ast.BitAnd: python_d.BitAndOp,
         ast.BitOr: python_d.BitOrOp,
@@ -274,7 +273,7 @@ class Analyzer(ast.NodeVisitor):
         return returnBlock.arguments[0]
 
     def visit_BinOp(self, e: ast.BinOp) -> mlir.Value:
-        op = self.operator_map.get(e.op.__class__)
+        op = Analyzer.bin_operator_map.get(e.op.__class__)
         if op == None:
             return self.undef_value(e)
 
@@ -440,8 +439,29 @@ class Analyzer(ast.NodeVisitor):
         with mlir.InsertionPoint(self.block):
             return python_d.Tuple(args)
 
+    unary_operator_map = {
+        ast.Invert: python_d.InvertOp,
+        ast.Not: python_d.NotOp,
+        ast.UAdd: python_d.UAddOp,
+        ast.USub: python_d.USubOp,
+    }
+
     def visit_UnaryOp(self, e: ast.UnaryOp) -> mlir.Value:
-        return self.undef_value(e) # FIXME
+        op = Analyzer.unary_operator_map.get(e.op.__class__)
+        if op == None:
+            return self.undef_value(e)
+
+        arg  = self.checked_visit_expr(e.operand)
+
+        valueType = python_d.ValueType.get()
+        exceptBlock = self.get_except_block()
+        returnBlock = self.block.create_after(valueType)
+
+        with mlir.InsertionPoint(self.block):
+            op(arg, [], [], returnBlock, exceptBlock)
+
+        self.block = returnBlock
+        return returnBlock.arguments[0]
 
     # Statements
     def checked_visit_stmt(self, e: ast.stmt):

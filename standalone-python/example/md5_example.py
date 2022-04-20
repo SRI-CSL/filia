@@ -46,8 +46,8 @@ def md5(message):
         for i, val in enumerate([a, b, c, d]):
             hash_pieces[i] += val
             hash_pieces[i] &= 0xFFFFFFFF
-
-    return sum(x<<(32*i) for i, x in enumerate(hash_pieces))
+    # JHX note. Changed from generator expression to list comprehension
+    return sum([x<<(32*i) for i, x in enumerate(hash_pieces)])
 
 def md5_to_hex(digest):
     raw = digest.to_bytes(16, byteorder='little')

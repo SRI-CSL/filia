@@ -9,14 +9,71 @@ from mlir_python.dialects import (
   python as python_d
 )
 
-class Value:
-    def __init__(self):
-        return
+# Return value associated with name
+def scope_get(block: mlir.Block, map:mlir.Value, name: str) -> mlir.Value:
+    with mlir.InsertionPoint(block):
+        return python_d.ScopeGet(map, mlir.StringAttr.get(name))
+
+# Assign a name the value.
+def scope_set(block: mlir.Block, map:mlir.Value, name:str, v: mlir.Value) -> mlir.Value:
+    with mlir.InsertionPoint(block):
+        python_d.ScopeSet(map, mlir.StringAttr.get(name), v)
+
+def scope_set_lhs(block: mlir.Block, map:mlir.Value, tgt: ast.expr, v:mlir.Value):
+    if isinstance(tgt, ast.Tuple):
+        n = len(tgt.elts)
+        with mlir.InsertionPoint(block):
+            python_d.TupleCheck(v, mlir.IntegerAttr.get(mlir.IntegerType.get_signed(64), n))
+        for i in range(0, n):
+            with mlir.InsertionPoint(block):
+                sv = python_d.TupleGet(v, mlir.IntegerAttr.get(mlir.IntegerType.get_signed(64), i))
+            scope_set_lhs(block, map, tgt.elts[i], sv)
+    elif isinstance(tgt, ast.Name):
+        scope_set(block, map, tgt.id, v)
+    else:
+        raise Exception(f'Unexpected target {tgt.__class__.__name__} {tgt.lineno}:{tgt.col_offset}')
+
+# invoke_next(next, nextBlock, doneBlock, throwBlock) invokes the next method and returns
+# a pair (bodyBlock, value) where:
+# * bodyBlock is a fresh block and
+# * value is a value within bodyBlock that refers to the next value in the iterator.
+#
+# * next is the method called to invoke next.
+# * nextBlock is the block that new blocks are appended too
+# *
+def invoke_next(next: mlir.Value, curBlock: mlir.Block, doneBlock: mlir.Block, throwBlock: mlir.Block):
+    valueType = python_d.ValueType.get()
+
+    nextBlock = curBlock.create_after()
+    with mlir.InsertionPoint(curBlock):
+        cf_d.BranchOp([], nextBlock)
+
+    bodyBlock   = nextBlock.create_after(valueType)
+    exceptBlock = nextBlock.create_after(valueType)
+
+    with mlir.InsertionPoint(nextBlock):
+        python_d.Invoke(next, [], None, [], [], bodyBlock, exceptBlock)
+
+    exception   = exceptBlock.arguments[0]
+    with mlir.InsertionPoint(exceptBlock):
+        c = python_d.IsInstance(exception, mlir.StringAttr.get("StopIteration"))
+        cf_d.CondBranchOp(c, [], [exception], doneBlock, throwBlock)
+
+    return nextBlock, bodyBlock, bodyBlock.arguments[0]
+
+# Return the none vlaue
+def truthy(block: mlir.Block, x: mlir.Value) -> mlir.Value:
+    with mlir.InsertionPoint(block):
+        return python_d.Truthy(x)
+
+
+class Module:
+    def __init__(self, mlir:mlir.Module):
+        self.mlir = mlir
 
 class Analyzer(ast.NodeVisitor):
 
-    def __init__(self, m: mlir.Module):
-        self.m = m
+    def __init__(self, m: Module):
         self.block = None
         self.map = None
         self.onDone = None
@@ -24,28 +81,23 @@ class Analyzer(ast.NodeVisitor):
 
     # Internal support
 
-    def undef_value(self, e: ast.AST):
+    def undef_value(self, e: ast.AST) -> mlir.Value:
         sys.stderr.write(f'Unsupported value {e.__class__.__name__} at {e.lineno}:{e.col_offset}\n')
         with mlir.InsertionPoint(self.block):
             return python_d.UndefinedOp()
 
     # Return the none vlaue
-    def none_value(self):
+    def none_value(self) -> mlir.Value:
         with mlir.InsertionPoint(self.block):
             return python_d.NoneOp()
 
-    # Return the none vlaue
-    def truthy(self, x: mlir.Value):
-        with mlir.InsertionPoint(self.block):
-            return python_d.Truthy(x)
-
     # Return value denoting method with given name in value
-    def get_method(self, w:mlir.Value, name: str):
+    def get_method(self, w:mlir.Value, name: str) -> mlir.Value:
         with mlir.InsertionPoint(self.block):
             return python_d.GetMethod(w, mlir.StringAttr.get(name))
 
 
-    def getExceptBlock(self):
+    def get_except_block(self):
         if self.exceptBlock != None:
            return self.exceptBlock
 
@@ -58,7 +110,7 @@ class Analyzer(ast.NodeVisitor):
         return exceptBlock
 
     # Invoke the given method.
-    def invoke(self, method: mlir.Value, args: list[Value], keywords=None):
+    def invoke(self, method: mlir.Value, args: list[mlir.Value], keywords=None) -> mlir.Value:
         if keywords == None or len(keywords) == 0:
             keyAttr = None
         else:
@@ -68,7 +120,7 @@ class Analyzer(ast.NodeVisitor):
             keyAttr = mlir.ArrayAttr.get(keyAttrs)
 
         valueType = python_d.ValueType.get()
-        exceptBlock = self.getExceptBlock()
+        exceptBlock = self.get_except_block()
         returnBlock = self.block.create_after(valueType)
 
         with mlir.InsertionPoint(self.block):
@@ -78,35 +130,26 @@ class Analyzer(ast.NodeVisitor):
         return returnBlock.arguments[0]
 
     # Invoke format value
-    def format_value(self, v: Value, format: Value):
+    def format_value(self, v: mlir.Value, format: mlir.Value) -> mlir.Value:
         m = self.get_method(v, '__format__')
         return self.invoke(m, [v, format])
 
     # Import a module and give it the given name
-    def pythonImport(self, module:str, name: str):
+    def pythonImport(self, module:str, name: str) -> mlir.Value:
         with mlir.InsertionPoint(self.block):
             python_d.ScopeImport(self.map, mlir.StringAttr.get(module), mlir.StringAttr.get(name))
 
     # Create a formatted string
-    def joined_string(self, args: list[Value]):
+    def joined_string(self, args: list[mlir.Value]) -> mlir.Value:
         with mlir.InsertionPoint(self.block):
             return python_d.FormattedString(args)
 
-    # Assign a name the value.
-    def assign_name(self, name:str, v: Value):
-        with mlir.InsertionPoint(self.block):
-            python_d.ScopeSet(self.map, mlir.StringAttr.get(name), v)
 
-    # Return value associated with name
-    def name_value(self, name: str):
-        with mlir.InsertionPoint(self.block):
-            return python_d.ScopeGet(self.map, mlir.StringAttr.get(name))
-
-    def string_constant(self, c: str):
+    def string_constant(self, c: str) -> mlir.Value:
         with mlir.InsertionPoint(self.block):
             return python_d.StrLit(mlir.StringAttr.get(c))
 
-    def int_constant(self, c: int):
+    def int_constant(self, c: int) -> mlir.Value:
         with mlir.InsertionPoint(self.block):
             if -2**63 <= c and c < 2**63:
                 return python_d.S64Lit(mlir.IntegerAttr.get(mlir.IntegerType.get_signed(64), c))
@@ -117,12 +160,12 @@ class Analyzer(ast.NodeVisitor):
         with mlir.InsertionPoint(self.block):
             return python_d.Builtin(mlir.StringAttr.get(name))
 
-    def load_value_attribute(self, v: Value, attr: str):
+    def load_value_attribute(self, v: mlir.Value, attr: str):
         get = self.builtin("getattr")
         return self.invoke(get, [v, self.string_constant(attr)])
 
     # Expressions
-    def checked_visit_expr(self, e: ast.expr):
+    def checked_visit_expr(self, e: ast.expr) -> mlir.Value:
         r = self.visit(e)
         if r == None:
             raise Exception(f'Unsupported expression {type(e)}')
@@ -156,9 +199,9 @@ class Analyzer(ast.NodeVisitor):
         ast.Sub: python_d.SubOp
     }
 
-    def apply_binop(self, left: mlir.Value, op, right: mlir.Value):
+    def apply_binop(self, left: mlir.Value, op, right: mlir.Value) -> mlir.Value:
         valueType = python_d.ValueType.get()
-        exceptBlock = self.getExceptBlock()
+        exceptBlock = self.get_except_block()
         returnBlock = self.block.create_after(valueType)
 
         with mlir.InsertionPoint(self.block):
@@ -167,7 +210,7 @@ class Analyzer(ast.NodeVisitor):
         self.block = returnBlock
         return returnBlock.arguments[0]
 
-    def visit_BinOp(self, e: ast.BinOp):
+    def visit_BinOp(self, e: ast.BinOp) -> mlir.Value:
         op = self.operator_map.get(e.op.__class__)
         if op == None:
             return self.undef_value(e)
@@ -176,7 +219,7 @@ class Analyzer(ast.NodeVisitor):
         right = self.checked_visit_expr(e.right)
         return self.apply_binop(left, op, right)
 
-    def visit_Call(self, c: ast.Call):
+    def visit_Call(self, c: ast.Call) -> mlir.Value:
         f = self.visit(c.func)
         assert(f != None)
         args = []
@@ -206,7 +249,7 @@ class Analyzer(ast.NodeVisitor):
         ast.NotIn : python_d.NotInOp
     }
 
-    def visit_Compare(self, e: ast.Compare):
+    def visit_Compare(self, e: ast.Compare) -> mlir.Value:
         left  = self.checked_visit_expr(e.left)
         args = e.comparators.__iter__()
         for cmpop in e.ops:
@@ -218,7 +261,7 @@ class Analyzer(ast.NodeVisitor):
                 left = self.apply_binop(left, op, right)
         return left
 
-    def visit_Constant(self, c: ast.Constant):
+    def visit_Constant(self, c: ast.Constant) -> mlir.Value:
         if isinstance(c.value, str):
             return self.string_constant(c.value)
         elif isinstance(c.value, int):
@@ -229,7 +272,7 @@ class Analyzer(ast.NodeVisitor):
         else:
             raise Exception(f'Unknown Constant {c.value}')
 
-    def visit_FormattedValue(self, fv: ast.FormattedValue):
+    def visit_FormattedValue(self, fv: ast.FormattedValue) -> mlir.Value:
         v = self.checked_visit_expr(fv.value)
         if fv.conversion != -1:
             raise Exception(f'Conversion unsupported')
@@ -243,7 +286,7 @@ class Analyzer(ast.NodeVisitor):
         return self.undef_value(node) # FIXME
 
     # See https://www.python.org/dev/peps/pep-0498/
-    def visit_JoinedStr(self, s: ast.JoinedStr):
+    def visit_JoinedStr(self, s: ast.JoinedStr) -> mlir.Value:
         args = []
         for a in s.values:
             if isinstance(a, ast.Constant):
@@ -257,16 +300,55 @@ class Analyzer(ast.NodeVisitor):
     def visit_Lambda(self, e: ast.Lambda) -> mlir.Value:
         return self.undef_value(e) # FIXME
 
-    def visit_List(self, e: ast.List):
+    def visit_List(self, e: ast.List) -> mlir.Value:
         args = map(self.checked_visit_expr, e.elts)
         with mlir.InsertionPoint(self.block):
             return python_d.List(args)
 
-    def visit_ListComp(self, e: ast.ListComp):
-        return self.undef_value(e) # FIXME
+    def visit_ListComp(self, e: ast.ListComp) -> mlir.Value:
+        # Get identifier of block to throw
+        throwBlock = self.get_except_block()
+
+        #
+        orig_map = self.map
+        with mlir.InsertionPoint(self.block):
+            # Variables in comprehension do not escape.
+            self.map = python_d.ScopeExtend(orig_map)
+            # Create empty list for storing result.
+            r = python_d.List([])
+
+        # Get append method off of list.
+        append = self.get_method(r, 'append')
+
+        # Create block for evaluating expression
+        finalBlock = self.block.create_after()
+        doneBlock = finalBlock
+        for g in e.generators:
+            assert(not g.is_async)
+            assert(len(g.ifs) == 0)
+
+            l = self.checked_visit_expr(g.iter)
+            i = self.invoke(self.get_method(l, '__iter__'), [])
+            next = self.get_method(i, '__next__')
+
+            nextBlock, self.block, bodyValue = invoke_next(next, self.block, doneBlock, throwBlock)
+            scope_set_lhs(self.block, self.map, g.target, bodyValue)
+            # Map done block to next so other loop.
+            doneBlock = nextBlock
+
+        e = self.checked_visit_expr(e.elt)
+        self.invoke(append, [e])
+
+        with mlir.InsertionPoint(self.block):
+            cf_d.BranchOp([], doneBlock)
+
+        self.block = finalBlock
+        self.map = orig_map
+
+        return l
 
     def visit_Name(self, node: ast.Name):
-        return self.name_value(node.id)
+        return scope_get(self.block, self.map, node.id)
 
     def visit_Slice(self, e: ast.Slice):
         upper = self.checked_visit_expr(e.upper) if e.upper != None else self.none_value()
@@ -309,26 +391,12 @@ class Analyzer(ast.NodeVisitor):
                 return False
         return True
 
-    def assignLhs(self, tgt, v):
-        if isinstance(tgt, ast.Tuple):
-            n = len(tgt.elts)
-            with mlir.InsertionPoint(self.block):
-                python_d.TupleCheck(v, mlir.IntegerAttr.get(mlir.IntegerType.get_signed(64), n))
-            for i in range(0, n):
-                with mlir.InsertionPoint(self.block):
-                    sv = python_d.TupleGet(v, mlir.IntegerAttr.get(mlir.IntegerType.get_signed(64), i))
-                self.assignLhs(tgt.elts[i], sv)
-        elif isinstance(tgt, ast.Name):
-            self.assign_name(tgt.id, v)
-        else:
-            raise Exception(f'Unexpected target {tgt.__class__.__name__} {tgt.lineno}:{tgt.col_offset}')
-
     def visit_Assign(self, a: ast.Assign):
         if len(a.targets) != 1:
             raise Exception('Assignment must have single left-hand side.')
         tgt = a.targets[0]
         r = self.checked_visit_expr(a.value)
-        self.assignLhs(tgt, r)
+        scope_set_lhs(self.block, self.map, tgt, r)
         return True
 
     def visit_AugAssign(self, node: ast.AugAssign):
@@ -347,35 +415,20 @@ class Analyzer(ast.NodeVisitor):
         i = self.invoke(enter, [])
         next = self.get_method(i, '__next__')
 
-        nextBlock = self.block.create_after()
 
-        with mlir.InsertionPoint(self.block):
-            cf_d.BranchOp([], nextBlock)
+        throwBlock = self.get_except_block()
 
-        valueType = python_d.ValueType.get()
+        doneBlock = self.block.create_after()
 
-        bodyBlock = nextBlock.create_after(valueType)
-        exceptBlock = bodyBlock.create_after(valueType)
-        with mlir.InsertionPoint(nextBlock):
-            python_d.Invoke(next, [], None, [], [], bodyBlock, exceptBlock)
+        nextBlock, bodyBlock, value = invoke_next(next, self.block, doneBlock, throwBlock)
+        scope_set_lhs(bodyBlock, self.map, s.target, value)
 
         # Get value for loop
-        value = bodyBlock.arguments[0]
-        bodyAnalyzer = Analyzer(self.m)
-        bodyAnalyzer.block = bodyBlock
-        bodyAnalyzer.map = self.map
-        bodyAnalyzer.assignLhs(s.target, value)
-        bodyCont = bodyAnalyzer.visitStmts(s.body)
+        self.block = bodyBlock
+        bodyCont = self.visitStmts(s.body)
         if bodyCont:
-            with mlir.InsertionPoint(bodyAnalyzer.block):
+            with mlir.InsertionPoint(self.block):
                 cf_d.BranchOp([], nextBlock)
-
-        exception = exceptBlock.arguments[0]
-        doneBlock = exceptBlock.create_after()
-        throwBlock = self.getExceptBlock()
-        with mlir.InsertionPoint(exceptBlock):
-            c = python_d.IsInstance(exception, mlir.StringAttr.get("StopIteration"))
-            cf_d.CondBranchOp(c, [], [exception], doneBlock, throwBlock)
 
         self.block = doneBlock
         return True
@@ -398,36 +451,42 @@ class Analyzer(ast.NodeVisitor):
             with mlir.InsertionPoint(funAnalyzer.block):
                 func_d.ReturnOp([funAnalyzer.none_value()])
 
+    name: _identifier
+    args: arguments
+    body: list[stmt]
+    decorator_list: list[expr]
+    returns: expr | None
+
+
         return True
 
     def visit_If(self, s: ast.If):
-        c = self.truthy(self.checked_visit_expr(s.test))
+        test = self.checked_visit_expr(s.test)
+        c = truthy(self.block, test)
 
+        initBlock = self.block
         newBlock = self.block.create_after()
 
+
         if s.orelse:
-            falseBlock = self.block.create_after()
-            falseAnalyzer = Analyzer(self.m)
-            falseAnalyzer.block = falseBlock
-            falseAnalyzer.map = self.map
-            if falseAnalyzer.visitStmts(s.orelse):
-                with mlir.InsertionPoint(falseAnalyzer.block):
+            falseBlock = initBlock.create_after()
+            self.block = falseBlock
+            if self.visitStmts(s.orelse):
+                with mlir.InsertionPoint(self.block):
                     cf_d.BranchOp([], newBlock)
         else:
             falseBlock = newBlock
 
         if s.body:
-            trueBlock = self.block.create_after()
-            trueAnalyzer = Analyzer(self.m)
-            trueAnalyzer.block = trueBlock
-            trueAnalyzer.map = self.map
-            if trueAnalyzer.visitStmts(s.body):
-                with mlir.InsertionPoint(trueAnalyzer.block):
+            trueBlock = initBlock.create_after()
+            self.block = trueBlock
+            if self.visitStmts(s.body):
+                with mlir.InsertionPoint(self.block):
                     cf_d.BranchOp([], newBlock)
         else:
             trueBlock = newBlock
 
-        with mlir.InsertionPoint(self.block):
+        with mlir.InsertionPoint(initBlock):
             cf_d.CondBranchOp(c, [], [], trueBlock, falseBlock)
         self.block = newBlock
         return True
@@ -463,7 +522,7 @@ class Analyzer(ast.NodeVisitor):
             var = item.optional_vars
             if var != None:
                 assert(isinstance(var, ast.Name))
-                self.assign_name(var.id, r)
+                scope_set(self.block, self.map, var.id, r)
             exitMethods.append(exit)
         prevDone = self.onDone
         def onDone():
@@ -502,23 +561,19 @@ class Analyzer(ast.NodeVisitor):
         with mlir.InsertionPoint(self.block):
             cf_d.BranchOp([], testBlock)
 
-        testAnalyzer = Analyzer(self.m)
-        testAnalyzer.block = testBlock
-        testAnalyzer.map = self.map
-        c = testAnalyzer.truthy(testAnalyzer.checked_visit_expr(s.test))
-
-        bodyBlock = testAnalyzer.block.create_after()
+        self.block = testBlock
+        testExpr = self.checked_visit_expr(s.test)
+        c = truthy(self.block, testExpr)
+        bodyBlock = self.block.create_after()
         doneBlock = bodyBlock.create_after()
-        with mlir.InsertionPoint(testAnalyzer.block):
+        with mlir.InsertionPoint(self.block):
             cf_d.CondBranchOp(c, [], [], bodyBlock, doneBlock)
 
         # Execute loop body
-        bodyAnalyzer = Analyzer(self.m)
-        bodyAnalyzer.block = bodyBlock
-        bodyAnalyzer.map = self.map
-        bodyCont = bodyAnalyzer.visitStmts(s.body)
+        self.block = bodyBlock
+        bodyCont = self.visitStmts(s.body)
         if bodyCont:
-            with mlir.InsertionPoint(bodyAnalyzer.block):
+            with mlir.InsertionPoint(self.block):
                 cf_d.BranchOp([], testBlock)
 
         self.block = doneBlock

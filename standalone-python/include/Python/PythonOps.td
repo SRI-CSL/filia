@@ -172,6 +172,17 @@ def Python_Builtin : Python_Op<"builtin", [NoSideEffect]> {
     let assemblyFormat = "$val attr-dict `:` type($result)";
 }
 
+def Python_Module : Python_Op<"module", [NoSideEffect]> {
+    let summary = "A reference to an external module.";
+    let description = [{
+        FIXME
+    }];
+
+    let arguments = (ins Python_BuiltinAttr:$val);
+    let results = (outs Python_Value:$result);
+    let assemblyFormat = "$val attr-dict `:` type($result)";
+}
+
 def Python_S64Lit : Python_Op<"intlit", [NoSideEffect]> {
     let summary = "An integer literal.";
     let description = [{
@@ -239,7 +250,7 @@ def Python_Invoke : Python_Op<"invoke", [
     }];
 }
 
-def Python_Throw : Python_Op<"throw", [Terminator]> {
+def Python_ThrowOp : Python_Op<"throw", [Terminator]> {
     let summary = "Throw a Python exception.";
     let description = [{
         Operation that invokes a Python method

@@ -7,7 +7,7 @@ set(LIBS
         MLIROptLib
         MLIRPython
         )
-add_llvm_executable(python-opt python-opt.cpp)
+add_llvm_executable(python-opt python-opt.cpp PythonDomain.cpp)
 
 llvm_update_compile_flags(python-opt)
 target_link_libraries(python-opt PRIVATE ${LIBS})

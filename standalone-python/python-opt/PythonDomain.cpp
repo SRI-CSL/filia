@@ -1,6 +1,80 @@
 #include "PythonDomain.h"
 #include "ValueTranslator.h"
 
+void ScopeDomain::addBuiltins() {
+  addBuiltin(::mlir::python::BuiltinAttr::abs);
+  addBuiltin(::mlir::python::BuiltinAttr::aiter);
+  addBuiltin(::mlir::python::BuiltinAttr::all);
+  addBuiltin(::mlir::python::BuiltinAttr::any);
+  addBuiltin(::mlir::python::BuiltinAttr::anext);
+  addBuiltin(::mlir::python::BuiltinAttr::ascii);
+  addBuiltin(::mlir::python::BuiltinAttr::bin);
+  addBuiltin(::mlir::python::BuiltinAttr::bool_builtin, "bool");
+  addBuiltin(::mlir::python::BuiltinAttr::breakpoint);
+  addBuiltin(::mlir::python::BuiltinAttr::bytearray);
+  addBuiltin(::mlir::python::BuiltinAttr::bytes);
+  addBuiltin(::mlir::python::BuiltinAttr::callable);
+  addBuiltin(::mlir::python::BuiltinAttr::chr);
+  addBuiltin(::mlir::python::BuiltinAttr::classmethod);
+  addBuiltin(::mlir::python::BuiltinAttr::compile);
+  addBuiltin(::mlir::python::BuiltinAttr::complex);
+  addBuiltin(::mlir::python::BuiltinAttr::delattr);
+  addBuiltin(::mlir::python::BuiltinAttr::dict);
+  addBuiltin(::mlir::python::BuiltinAttr::dir);
+  addBuiltin(::mlir::python::BuiltinAttr::divmod);
+  addBuiltin(::mlir::python::BuiltinAttr::enumerate);
+  addBuiltin(::mlir::python::BuiltinAttr::eval);
+  addBuiltin(::mlir::python::BuiltinAttr::exec);
+  addBuiltin(::mlir::python::BuiltinAttr::filter);
+  addBuiltin(::mlir::python::BuiltinAttr::float_builtin, "float");
+  addBuiltin(::mlir::python::BuiltinAttr::format);
+  addBuiltin(::mlir::python::BuiltinAttr::frozenset);
+  addBuiltin(::mlir::python::BuiltinAttr::getattr);
+  addBuiltin(::mlir::python::BuiltinAttr::globals);
+  addBuiltin(::mlir::python::BuiltinAttr::hasattr);
+  addBuiltin(::mlir::python::BuiltinAttr::hash);
+  addBuiltin(::mlir::python::BuiltinAttr::help);
+  addBuiltin(::mlir::python::BuiltinAttr::hex);
+  addBuiltin(::mlir::python::BuiltinAttr::id);
+  addBuiltin(::mlir::python::BuiltinAttr::input);
+  addBuiltin(::mlir::python::BuiltinAttr::int_builtin, "int");
+  addBuiltin(::mlir::python::BuiltinAttr::isinstance);
+  addBuiltin(::mlir::python::BuiltinAttr::issubclass);
+  addBuiltin(::mlir::python::BuiltinAttr::iter);
+  addBuiltin(::mlir::python::BuiltinAttr::len);
+  addBuiltin(::mlir::python::BuiltinAttr::list);
+  addBuiltin(::mlir::python::BuiltinAttr::locals);
+  addBuiltin(::mlir::python::BuiltinAttr::map);
+  addBuiltin(::mlir::python::BuiltinAttr::max);
+  addBuiltin(::mlir::python::BuiltinAttr::memoryview);
+  addBuiltin(::mlir::python::BuiltinAttr::min);
+  addBuiltin(::mlir::python::BuiltinAttr::next);
+  addBuiltin(::mlir::python::BuiltinAttr::object);
+  addBuiltin(::mlir::python::BuiltinAttr::oct);
+  addBuiltin(::mlir::python::BuiltinAttr::open);
+  addBuiltin(::mlir::python::BuiltinAttr::ord);
+  addBuiltin(::mlir::python::BuiltinAttr::pow);
+  addBuiltin(::mlir::python::BuiltinAttr::print);
+  addBuiltin(::mlir::python::BuiltinAttr::property);
+  addBuiltin(::mlir::python::BuiltinAttr::range);
+  addBuiltin(::mlir::python::BuiltinAttr::repr);
+  addBuiltin(::mlir::python::BuiltinAttr::reversed);
+  addBuiltin(::mlir::python::BuiltinAttr::round);
+  addBuiltin(::mlir::python::BuiltinAttr::set);
+  addBuiltin(::mlir::python::BuiltinAttr::setattr);
+  addBuiltin(::mlir::python::BuiltinAttr::slice);
+  addBuiltin(::mlir::python::BuiltinAttr::sorted);
+  addBuiltin(::mlir::python::BuiltinAttr::staticmethod);
+  addBuiltin(::mlir::python::BuiltinAttr::str);
+  addBuiltin(::mlir::python::BuiltinAttr::sum);
+  addBuiltin(::mlir::python::BuiltinAttr::super);
+  addBuiltin(::mlir::python::BuiltinAttr::tuple);
+  addBuiltin(::mlir::python::BuiltinAttr::type);
+  addBuiltin(::mlir::python::BuiltinAttr::vars);
+  addBuiltin(::mlir::python::BuiltinAttr::zip);
+  addBuiltin(::mlir::python::BuiltinAttr::import, "__import__");
+}
+
 void ScopeDomain::initializeFromPrev(ValueTranslator& translator, const ScopeDomain& srcDomain, const mlir::Value& tgtValue) {
   for (auto j = srcDomain.map.begin(); j != srcDomain.map.end(); ++j) {
     auto name = j->first;

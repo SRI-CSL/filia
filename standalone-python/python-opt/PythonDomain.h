@@ -16,7 +16,8 @@
 inline
 void fatal_error(const char* message) {
   fprintf(stderr, "%s\n", message);
-  exit(-1);
+  *((int*) 0) = 1;
+//  exit(-1);
 }
 
 class ValueTranslator;
@@ -104,9 +105,12 @@ public:
         return b.result();
       }
     case ARGUMENT:
-      return argValues[argument];
+      {
+        auto r = argValues[argument];
+        if (!r) fatal_error("Unassigned argValue");
+        return r;
+      }
     }
-    return mlir::Value();
   }
 };
 
@@ -136,7 +140,13 @@ private:
     map.insert(std::make_pair(name, v));
   }
 
-  void addBuiltin(llvm::StringRef name) {
+  void addBuiltin(mlir::python::BuiltinAttr a, llvm::StringRef name) {
+    llvm::StringRef val(mlir::python::stringifyEnum(a));
+    addBinding(name, ValueDomain::make_builtin(val));
+  }
+
+  void addBuiltin(mlir::python::BuiltinAttr a) {
+    llvm::StringRef name(mlir::python::stringifyEnum(a));
     addBinding(name, ValueDomain::make_builtin(name));
   }
 
@@ -169,14 +179,7 @@ public:
   /**
    * Add mappings from builtin names to the corresponding builtin function.
    */
-  void addBuiltins() {
-    addBuiltin("eval");
-    addBuiltin("getattr");
-    addBuiltin("isinstance");
-    addBuiltin("open");
-    addBuiltin("print");
-    addBuiltin("slice");
-  }
+  void addBuiltins();
 
   void import(const llvm::StringRef& module, const llvm::StringRef& asName) {
     addBinding(asName, ValueDomain::make_module(module));
@@ -195,6 +198,10 @@ public:
     auto i = map.find(name);
     return (i != map.end()) ? &i->second : 0;
   }
+
+  static ScopeDomain extend(const ScopeDomain& d) {
+    return d;
+  }
 };
 
 /**
@@ -203,12 +210,12 @@ public:
 class LocalsDomain {
   // Map values for scope variables to the associated domain.
   llvm::DenseMap<mlir::Value, ScopeDomain> scopeDomains;
-
 public:
+  LocalsDomain() = default;
+  LocalsDomain(const LocalsDomain&) = default;
+  LocalsDomain(LocalsDomain&&) = default;
+  LocalsDomain& operator=(const LocalsDomain&) = delete;
 
-  LocalsDomain() {
-
-  }
 
   // Create a locals domain from a previous block
   void populateFromPrev(ValueTranslator& translator, const LocalsDomain& prev);
@@ -219,35 +226,36 @@ public:
    */
   bool mergeFromPrev(ValueTranslator& translator, const LocalsDomain& prev);
 
-  ScopeDomain& scope_domain(const mlir::Value& v) {
-    auto i = scopeDomains.find(v);
-    if (i != scopeDomains.end())
-      return i->second;
 
-    ScopeDomain d;
-    auto r = scopeDomains.insert(std::make_pair(v, d));
-    return r.first->second;
+  void scope_unknown(const mlir::Value& v) {
+    auto p = scopeDomains.try_emplace(v);
+    if (!p.second)
+      fatal_error("Scope already defined.");
+  }
+
+  ScopeDomain& scope_domain(const mlir::Value& v) {
+    auto p = scopeDomains.try_emplace(v);
+    return p.first->second;
   }
 
   void scope_init(mlir::python::ScopeInit op) {
-    ScopeDomain d;
-    d.addBuiltins();
-    scopeDomains.insert(std::make_pair(op.getResult(), d));
+    auto p = scopeDomains.try_emplace(op.getResult());
+    if (!p.second)
+      fatal_error("Scope already defined.");
+    p.first->second.addBuiltins();
   }
 
   void scope_extend(mlir::python::ScopeExtend op) {
-    ScopeDomain d;
-    scopeDomains.insert(std::make_pair(op.getResult(), d));
+    auto& initScope = scope_domain(op.scope());
+
+    auto p = scopeDomains.try_emplace(op.getResult(), ScopeDomain::extend(initScope));
+    if (!p.second)
+      fatal_error("Scope already defined.");
   }
 
   void scope_import(mlir::python::ScopeImport op) {
     auto& m = scope_domain(op.scope());
     m.import(op.module(), op.asName());
-  }
-
-  ValueDomain* scope_get(mlir::python::ScopeGet op) {
-    auto m = scope_domain(op.scope());
-    return m.getValue(op.name());
   }
 
   void scope_set(mlir::python::ScopeSet op) {

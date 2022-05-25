@@ -39,9 +39,10 @@ bool operator==(const ScopeField& x, const ScopeField& y) {
  *
  */
 struct BlockArgInfo {
-  // Block this is for.
+private:
+  // Block this arg info is for..
   mlir::Block* block;
-
+public:
   LocalsDomain startDomain;
 
 
@@ -49,7 +50,21 @@ struct BlockArgInfo {
   llvm::DenseMap<ScopeField, unsigned> argMap;
   std::vector<std::pair<ScopeField, std::vector<mlir::Location>> > argVec;
 
-  BlockArgInfo(mlir::Block* b) : block(b) {}
+  BlockArgInfo(mlir::Block* b) : block(b) {
+    if (!b) fatal_error("BlockArgInfo given null block.");
+  }
+
+  BlockArgInfo() = delete;
+  BlockArgInfo(BlockArgInfo&&) = default;
+  BlockArgInfo(const BlockArgInfo&) = delete;
+  BlockArgInfo& operator=(const BlockArgInfo&) = delete;
+
+  mlir::Block* getBlock() const {
+    //if (!block) {
+    //  fatal_error("getBlock() is null.");
+    //}
+    return block;
+  }
 
   // Returns an index to represent a value stored at a particular scope value.
   unsigned getLocalArg(const mlir::Value& scope, const llvm::StringRef name) {

@@ -75,12 +75,77 @@ def Python_NotEqOp : Python_BinOp<"not_eq">;
 def Python_NotInOp : Python_BinOp<"not_in">;
 
 def Python_BuiltinAttr : StrEnumAttr<"BuiltinAttr", "", [
+        StrEnumAttrCase<"abs">,
+        StrEnumAttrCase<"aiter">,
+        StrEnumAttrCase<"all">,
+        StrEnumAttrCase<"any">,
+        StrEnumAttrCase<"anext">,
+        StrEnumAttrCase<"ascii">,
+        StrEnumAttrCase<"bin">,
+        StrEnumAttrCase<"bool_builtin">,
+        StrEnumAttrCase<"breakpoint">,
+        StrEnumAttrCase<"bytearray">,
+        StrEnumAttrCase<"bytes">,
+        StrEnumAttrCase<"callable">,
+        StrEnumAttrCase<"chr">,
+        StrEnumAttrCase<"classmethod">,
+        StrEnumAttrCase<"compile">,
+        StrEnumAttrCase<"complex">,
+        StrEnumAttrCase<"delattr">,
+        StrEnumAttrCase<"dict">,
+        StrEnumAttrCase<"dir">,
+        StrEnumAttrCase<"divmod">,
+        StrEnumAttrCase<"enumerate">,
         StrEnumAttrCase<"eval">,
+        StrEnumAttrCase<"exec">,
+        StrEnumAttrCase<"filter">,
+        StrEnumAttrCase<"float_builtin">,
+        StrEnumAttrCase<"format">,
+        StrEnumAttrCase<"frozenset">,
         StrEnumAttrCase<"getattr">,
+        StrEnumAttrCase<"globals">,
+        StrEnumAttrCase<"hasattr">,
+        StrEnumAttrCase<"hash">,
+        StrEnumAttrCase<"help">,
+        StrEnumAttrCase<"hex">,
+        StrEnumAttrCase<"id">,
+        StrEnumAttrCase<"input">,
+        StrEnumAttrCase<"int_builtin">,
         StrEnumAttrCase<"isinstance">,
+        StrEnumAttrCase<"issubclass">,
+        StrEnumAttrCase<"iter">,
+        StrEnumAttrCase<"len">,
+        StrEnumAttrCase<"list">,
+        StrEnumAttrCase<"locals">,
+        StrEnumAttrCase<"map">,
+        StrEnumAttrCase<"max">,
+        StrEnumAttrCase<"memoryview">,
+        StrEnumAttrCase<"min">,
+        StrEnumAttrCase<"next">,
+        StrEnumAttrCase<"object">,
+        StrEnumAttrCase<"oct">,
         StrEnumAttrCase<"open">,
+        StrEnumAttrCase<"ord">,
+        StrEnumAttrCase<"pow">,
         StrEnumAttrCase<"print">,
-        StrEnumAttrCase<"slice">
+        StrEnumAttrCase<"property">,
+        StrEnumAttrCase<"range">,
+        StrEnumAttrCase<"repr">,
+        StrEnumAttrCase<"reversed">,
+        StrEnumAttrCase<"round">,
+        StrEnumAttrCase<"set">,
+        StrEnumAttrCase<"setattr">,
+        StrEnumAttrCase<"slice">,
+        StrEnumAttrCase<"sorted">,
+        StrEnumAttrCase<"staticmethod">,
+        StrEnumAttrCase<"str">,
+        StrEnumAttrCase<"sum">,
+        StrEnumAttrCase<"super">,
+        StrEnumAttrCase<"tuple">,
+        StrEnumAttrCase<"type">,
+        StrEnumAttrCase<"vars">,
+        StrEnumAttrCase<"zip">,
+        StrEnumAttrCase<"import">
     ]> {
     let cppNamespace = "::mlir::python";
 }
@@ -178,7 +243,7 @@ def Python_Module : Python_Op<"module", [NoSideEffect]> {
         FIXME
     }];
 
-    let arguments = (ins Python_BuiltinAttr:$val);
+    let arguments = (ins StrAttr:$val);
     let results = (outs Python_Value:$result);
     let assemblyFormat = "$val attr-dict `:` type($result)";
 }
@@ -227,7 +292,7 @@ def Python_GetMethod : Python_Op<"getmethod", []> {
     let assemblyFormat = "$obj `,` $method attr-dict `:` type($result)";
 }
 
-def Python_Invoke : Python_Op<"invoke", [
+def Python_InvokeOp : Python_Op<"invoke", [
       AttrSizedOperandSegments,Terminator
     ]> {
     let summary = "Invoke a Python method";

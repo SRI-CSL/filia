@@ -133,6 +133,7 @@ def Python_BuiltinAttr : StrEnumAttr<"BuiltinAttr", "", [
         StrEnumAttrCase<"repr">,
         StrEnumAttrCase<"reversed">,
         StrEnumAttrCase<"round">,
+        StrEnumAttrCase<"scriptmain">,
         StrEnumAttrCase<"set">,
         StrEnumAttrCase<"setattr">,
         StrEnumAttrCase<"slice">,
@@ -148,53 +149,6 @@ def Python_BuiltinAttr : StrEnumAttr<"BuiltinAttr", "", [
         StrEnumAttrCase<"import">
     ]> {
     let cppNamespace = "::mlir::python";
-}
-
-def Python_ScopeInit : Python_Op<"scope_init", [NoSideEffect]> {
-    let summary = "Create an empty scope.";
-    let description = [{
-        This creates an initial empty scope.
-    }];
-    let results = (outs Python_Scope:$result);
-    let assemblyFormat = "attr-dict `:` type($result)";
-}
-
-def Python_ScopeExtend : Python_Op<"scope_extend", [NoSideEffect]> {
-    let summary = "Create a scope that extends an existing one";
-    let description = [{
-        This creates an empty scope that extends a current one.
-    }];
-    let arguments = (ins Python_Scope:$scope);
-    let results = (outs Python_Scope:$result);
-    let assemblyFormat = "$scope attr-dict `:` type($result)";
-}
-
-def Python_ScopeImport : Python_Op<"scope_import", []> {
-    let summary = "Import a module into the scope.";
-    let description = [{
-        This binds a variable in a scope table.
-    }];
-    let arguments = (ins Python_Scope:$scope, StrAttr:$module, StrAttr:$asName);
-    let assemblyFormat = "$scope `,` $module `,` $asName attr-dict";
-}
-
-def Python_ScopeSet : Python_Op<"scope_set", []> {
-    let summary = "Define a variable in a scope.";
-    let description = [{
-        This binds a variable in a scope table.
-    }];
-    let arguments = (ins Python_Scope:$scope, StrAttr:$name, Python_Value:$value);
-    let assemblyFormat = "$scope `,` $name `,` $value attr-dict";
-}
-
-def Python_ScopeGet : Python_Op<"scope_get", []> {
-    let summary = "Get value of a variable in local/global map.";
-    let description = [{
-        This gets a variable in the map.
-    }];
-    let arguments = (ins Python_Scope:$scope, StrAttr:$name);
-    let results = (outs Python_Value:$result);
-    let assemblyFormat = "$scope `,` $name attr-dict `:` type($result)";
 }
 
 def Python_NoneOp : Python_Op<"none", [NoSideEffect]> {
@@ -224,6 +178,16 @@ def Python_UndefinedOp : Python_Op<"undefined", [NoSideEffect]> {
 
     let results = (outs Python_Value:$result);
     let assemblyFormat = "attr-dict `:` type($result)";
+}
+
+def Python_ArraySet : Python_Op<"array_set", []> {
+    let summary = "Update array at a given index.";
+    let description = [{
+        FIXME
+    }];
+
+    let arguments = (ins Python_Value:$array, Python_Value:$index, Python_Value: $value);
+    let assemblyFormat = "$array $index $value attr-dict";
 }
 
 def Python_Builtin : Python_Op<"builtin", [NoSideEffect]> {
@@ -334,7 +298,7 @@ def Python_IsInstance : Python_Op<"isinstance", [NoSideEffect]> {
     let assemblyFormat = "$value `,` $classname attr-dict `:` type($result)";
 }
 
-def Python_FormattedString : Python_Op<"formattedstring", []> {
+def Python_FormattedString : Python_Op<"formattedstring", [NoSideEffect]> {
     let summary = "An interpolated string";
     let description = [{
         Operation that evaluates an interpolated string (see PEP 498).
@@ -344,7 +308,7 @@ def Python_FormattedString : Python_Op<"formattedstring", []> {
     let assemblyFormat = "`(` $args `)` attr-dict `:` type($result)";
 }
 
-def Python_List : Python_Op<"list", []> {
+def Python_List : Python_Op<"list", [NoSideEffect]> {
     let summary = "Construct a list.";
     let description = [{
         Constructs a list from a list of arguments.
@@ -354,7 +318,7 @@ def Python_List : Python_Op<"list", []> {
     let assemblyFormat = "`(` $args `)` attr-dict `:` type($result)";
 }
 
-def Python_Tuple : Python_Op<"tuple", []> {
+def Python_Tuple : Python_Op<"tuple", [NoSideEffect]> {
     let summary = "Construct a tuple.";
     let description = [{
         Constructs a tuple from a list of arguments.
@@ -383,7 +347,7 @@ def Python_TupleCheck : Python_Op<"tuple_check", []> {
     let assemblyFormat = "$value `,` $arity attr-dict";
 }
 
-def Python_TupleGet : Python_Op<"tuple_get", []> {
+def Python_TupleGet : Python_Op<"tuple_get", [NoSideEffect]> {
     let summary = "Predicate that gets a value with given index from tuple.";
     let description = [{
         Get a value from tuple (undefined if value is not a tuple or index is invalid)
@@ -393,11 +357,77 @@ def Python_TupleGet : Python_Op<"tuple_get", []> {
     let assemblyFormat = "$value `,` $idx attr-dict `:` type($result)";
 }
 
-def Python_FunctionRef : Python_Op<"function_ref", []> {
+def Python_FunctionRef : Python_Op<"function_ref", [NoSideEffect]> {
     let summary = "Create a Python value referencing a function.";
-    let arguments = (ins SymbolRefAttr:$fun, ArrayAttr:$arg_names, Python_Scope:$scope);
+    let arguments =
+        (ins SymbolRefAttr:$fun,
+             ArrayAttr:$arg_names,
+             Python_Scope:$scope,
+             Variadic<Python_Cell>:$capture);
     let results = (outs Python_Value:$result);
-    let assemblyFormat = "$fun `(` $arg_names `)` $scope attr-dict `:` type($result)";
+    let assemblyFormat = "$fun `(` $arg_names `)` $scope `[` $capture `]` attr-dict `:` type($result)";
+}
+
+// Cell operators
+
+def Python_CellAlloc : Python_Op<"cell_alloc", [NoSideEffect]> {
+    let summary = "Create an empty cell for storing values.";
+    let description = [{
+        This creates an initial empty cell.
+    }];
+    let results = (outs Python_Cell:$result);
+    let assemblyFormat = "attr-dict `:` type($result)";
+}
+
+def Python_CellStore : Python_Op<"cell_store", []> {
+    let summary = "Stores the value in the cell.";
+    let description = [{
+        Stores the value in the cell.
+    }];
+    let arguments = (ins Python_Cell:$cell, Python_Value:$value);
+    let assemblyFormat = "$cell `,` $value attr-dict";
+}
+
+def Python_CellLoad : Python_Op<"cell_load", []> {
+    let summary = "Returns the value currently stored in the cell.";
+    let description = [{
+        Returns the value currently stored in the cell.
+    }];
+    let arguments = (ins Python_Cell:$cell);
+    let results = (outs Python_Value:$result);
+    let assemblyFormat = "$cell attr-dict `:` type($result)";
+}
+
+// Scope operators
+
+def Python_ScopeInit : Python_Op<"scope_init", [NoSideEffect]> {
+    let summary = "Create an empty scope.";
+    let description = [{
+        This creates an initial empty scope.
+    }];
+    let arguments = (ins ArrayAttr:$names, Variadic<Python_Cell>:$cells);
+    let results = (outs Python_Scope:$result);
+    let assemblyFormat = "$names `(` $cells `)` attr-dict `:` type($result)";
+}
+
+def Python_ScopeExtend : Python_Op<"scope_extend", [NoSideEffect]> {
+    let summary = "Create a scope that extends an existing one";
+    let description = [{
+        This creates an empty scope that extends a current one.
+    }];
+    let arguments = (ins Python_Scope:$scope, ArrayAttr:$names, Variadic<Python_Cell>:$cells);
+    let results = (outs Python_Scope:$result);
+    let assemblyFormat = "$scope $names `(` $cells `)` attr-dict `:` type($result)";
+}
+
+def Python_ScopeGet : Python_Op<"scope_get", []> {
+    let summary = "Get value of a variable in local/global map.";
+    let description = [{
+        This gets a variable in the map.
+    }];
+    let arguments = (ins Python_Scope:$scope, StrAttr:$name);
+    let results = (outs Python_Cell:$result);
+    let assemblyFormat = "$scope `,` $name attr-dict `:` type($result)";
 }
 
 #endif // PYTHON_OPS

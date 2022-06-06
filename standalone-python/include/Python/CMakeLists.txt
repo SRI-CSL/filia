@@ -1,4 +1,4 @@
-set(LLVM_TARGET_DEFINITIONS PythonOps.td )
+set(LLVM_TARGET_DEFINITIONS PythonOps.td)
 mlir_tablegen(PythonOpsEnums.h.inc -gen-enum-decls)
 mlir_tablegen(PythonOpsEnums.cpp.inc -gen-enum-defs)
 

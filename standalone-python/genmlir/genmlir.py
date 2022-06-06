@@ -1,5 +1,7 @@
+from __future__ import annotations
 import ast
 import sys
+from typing import Dict
 
 import mlir_python.ir as mlir
 from mlir_python.dialects import (
@@ -9,29 +11,20 @@ from mlir_python.dialects import (
   python as python_d
 )
 
-# Return value associated with name
-def scope_get(block: mlir.Block, map:mlir.Value, name: str) -> mlir.Value:
+# Allocate a cell
+def cell_alloc(block: mlir.Block) -> mlir.Value:
     with mlir.InsertionPoint(block):
-        return python_d.ScopeGet(map, mlir.StringAttr.get(name))
+        return python_d.CellAlloc()
 
-# Assign a name the value.
-def scope_set(block: mlir.Block, map:mlir.Value, name:str, v: mlir.Value) -> mlir.Value:
+# Return value stored in the cell.
+def cell_load(block: mlir.Block, cell: mlir.Value) -> mlir.Value:
     with mlir.InsertionPoint(block):
-        python_d.ScopeSet(map, mlir.StringAttr.get(name), v)
+        return python_d.CellLoad(cell)
 
-def scope_set_lhs(block: mlir.Block, map:mlir.Value, tgt: ast.expr, v:mlir.Value):
-    if isinstance(tgt, ast.Tuple):
-        n = len(tgt.elts)
-        with mlir.InsertionPoint(block):
-            python_d.TupleCheck(v, mlir.IntegerAttr.get(mlir.IntegerType.get_signed(64), n))
-        for i in range(0, n):
-            with mlir.InsertionPoint(block):
-                sv = python_d.TupleGet(v, mlir.IntegerAttr.get(mlir.IntegerType.get_signed(64), i))
-            scope_set_lhs(block, map, tgt.elts[i], sv)
-    elif isinstance(tgt, ast.Name):
-        scope_set(block, map, tgt.id, v)
-    else:
-        raise Exception(f'Unexpected target {tgt.__class__.__name__} {tgt.lineno}:{tgt.col_offset}')
+# Set value stored in cell.
+def cell_store(block: mlir.Block, cell: mlir.Value, value: mlir.Value):
+    with mlir.InsertionPoint(block):
+        python_d.CellStore(cell, value)
 
 # invoke_next(next, nextBlock, doneBlock, throwBlock) invokes the next method and returns
 # a pair (bodyBlock, value) where:
@@ -52,7 +45,7 @@ def invoke_next(next: mlir.Value, curBlock: mlir.Block, doneBlock: mlir.Block, t
     exceptBlock = nextBlock.create_after(valueType)
 
     with mlir.InsertionPoint(nextBlock):
-        python_d.Invoke(next, [], None, [], [], bodyBlock, exceptBlock)
+        python_d.InvokeOp(next, [], None, [], [], bodyBlock, exceptBlock)
 
     exception   = exceptBlock.arguments[0]
     with mlir.InsertionPoint(exceptBlock):
@@ -66,12 +59,121 @@ def truthy(block: mlir.Block, x: mlir.Value) -> mlir.Value:
     with mlir.InsertionPoint(block):
         return python_d.Truthy(x)
 
+class BuiltinSet:
+    def __init__(self,):
+        self._builtins = {}
+        self.addBuiltins()
+
+    def addBuiltin(self, mlirName: str, pyName=None):
+        name = pyName if pyName != None else mlirName
+        self._builtins[name] = mlirName
+
+    def addBuiltins(self):
+        self.addBuiltin("abs")
+        self.addBuiltin("aiter")
+        self.addBuiltin("all")
+        self.addBuiltin("any")
+        self.addBuiltin("anext")
+        self.addBuiltin("ascii")
+        self.addBuiltin("bin")
+        self.addBuiltin("bool_builtin", "bool")
+        self.addBuiltin("breakpoint")
+        self.addBuiltin("bytearray")
+        self.addBuiltin("bytes")
+        self.addBuiltin("callable")
+        self.addBuiltin("chr")
+        self.addBuiltin("classmethod")
+        self.addBuiltin("compile")
+        self.addBuiltin("complex")
+        self.addBuiltin("delattr")
+        self.addBuiltin("dict")
+        self.addBuiltin("dir")
+        self.addBuiltin("divmod")
+        self.addBuiltin("enumerate")
+        self.addBuiltin("eval")
+        self.addBuiltin("exec")
+        self.addBuiltin("filter")
+        self.addBuiltin("float_builtin", "float")
+        self.addBuiltin("format")
+        self.addBuiltin("frozenset")
+        self.addBuiltin("getattr")
+        self.addBuiltin("globals")
+        self.addBuiltin("hasattr")
+        self.addBuiltin("hash")
+        self.addBuiltin("help")
+        self.addBuiltin("hex")
+        self.addBuiltin("id")
+        self.addBuiltin("input")
+        self.addBuiltin("int_builtin", "int")
+        self.addBuiltin("isinstance")
+        self.addBuiltin("issubclass")
+        self.addBuiltin("iter")
+        self.addBuiltin("len")
+        self.addBuiltin("list")
+        self.addBuiltin("locals")
+        self.addBuiltin("map")
+        self.addBuiltin("max")
+        self.addBuiltin("memoryview")
+        self.addBuiltin("min")
+        self.addBuiltin("next")
+        self.addBuiltin("object")
+        self.addBuiltin("oct")
+        self.addBuiltin("open")
+        self.addBuiltin("ord")
+        self.addBuiltin("pow")
+        self.addBuiltin("print")
+        self.addBuiltin("property")
+        self.addBuiltin("range")
+        self.addBuiltin("repr")
+        self.addBuiltin("reversed")
+        self.addBuiltin("round")
+        self.addBuiltin("set")
+        self.addBuiltin("setattr")
+        self.addBuiltin("slice")
+        self.addBuiltin("sorted")
+        self.addBuiltin("staticmethod")
+        self.addBuiltin("str")
+        self.addBuiltin("sum")
+        self.addBuiltin("super")
+        self.addBuiltin("tuple")
+        self.addBuiltin("type")
+        self.addBuiltin("vars")
+        self.addBuiltin("zip")
+        self.addBuiltin("import", "__import__")
+        self.addBuiltin("scriptmain", "__name__")
+
+    def builtin_mlir_name(self, name: str) -> str|None:
+        return self._builtins.get(name)
+
+bc = BuiltinSet()
+def builtin_mlir_name(name: str) -> str|none:
+    return bc.builtin_mlir_name(name)
+
+# Represent a scope
+class VariableScope:
+    # Variables defined in this scope
+    vars: Dict[str, None]
+    # Variables referenced in this scope
+    parent_vars: list[ast.Name]
+
+    def __init__(self, vars: Dict[str, None], parentVars: Dict[str, ast.Name]):
+        self.vars = vars
+        self.parent_vars = []
+        for v in parentVars.values():
+            self.parent_vars.append(v)
 
 class Module:
+    # MLIR module
+    mlir: mlir.Module
+    # Maps identifiers for specific AST nodes to the scope associated
+    _scope_map : Dict[int, VariableScope]
+    # Maps string names to the number of variables with that name
+    _vars : Dict[str, int]
 
-    def __init__(self, mlir:mlir.Module):
+    def __init__(self, mlir:mlir.Module, scope_map: Dict[int, VariableScope]):
         self.mlir = mlir
-        self.vars = {}
+        self._scope_map = scope_map
+        self._vars = {}
 
     # Ensure a symbol has a fresh name.
     def fresh_symbol(self, nm: str|None) -> str:
@@ -82,24 +184,326 @@ class Module:
             nm = nm.replace('@', '')
             if nm == "":
                 nm = "_mlir_gen"
-        cnt = self.vars.get(nm)
+        cnt = self._vars.get(nm)
         if cnt == None:
-            self.vars[nm] = 0
+            self._vars[nm] = 0
             return nm
         else:
-            self.vars[nm] = cnt + 1
+            self._vars[nm] = cnt+1
             return f'{nm}@{cnt}'
 
-class Analyzer(ast.NodeVisitor):
+    # Get scope for item with given identifier
+    def get_scope(self, ident: int) -> VariableScope:
+        return self._scope_map[ident]
 
-    def __init__(self, m: Module):
+# This class is responsible for visiting statements in a function
+class VariableCapture(ast.NodeVisitor):
+    map: Dict[int, VariableScope]
+    # Variables defined in this scope
+    vars: Dict[str, None]
+    # Variables referenced in this scope
+    references: Dict[str, ast.Name]
+
+    # Create variable capture visitor with given identifier and parent.
+    def __init__(self, map: Dict[int, VariableScope]):
+        self.map = map
+        self.vars = {}
+        self.references = {}
+
+    # Record variable referenced in this scope
+    def add_reference(self, ast: ast.Name):
+        name = ast.id
+        if (builtin_mlir_name(name) == None) and not (name in self.vars) and not (name in self.references):
+            self.references[name] = ast
+
+    # Add inner scope to this scope
+    def close_scope(self, id: int, inner: VariableCapture):
+        self.map[id] = inner.mkScope()
+        for v in inner.references.values():
+            self.add_reference(v)
+
+    def mkScope(self) -> VariableScope:
+        return VariableScope(self.vars, self.references)
+
+    # Record variable with name defined in this scope.
+    def addVar(self, name: str):
+        self.vars[name] = None
+        self.references.pop(name, None)
+
+    def addLhs(self, tgt: ast.expr):
+        if isinstance(tgt, ast.Tuple):
+            n = len(tgt.elts)
+            for i in range(0, n):
+                self.addLhs(tgt.elts[i])
+        elif isinstance(tgt, ast.Name):
+            self.addVar(tgt.id)
+        else:
+            raise Exception(f'Unexpected target {tgt.__class__.__name__} {tgt.lineno}:{tgt.col_offset}')
+
+
+    # Treat expression as a left-hand side and add variables to write vars.
+    def addAssignLhs(self, tgt: ast.expr):
+        if isinstance(tgt, ast.Subscript):
+            self.checked_visit_expr(tgt.value)
+            self.checked_visit_expr(tgt.slice)
+        else:
+            self.addLhs(tgt)
+
+
+    def addArgs(self, args: ast.arguments):
+        for a in args.args:
+            self.addVar(a.arg)
+        assert(args.vararg == None)
+        assert(len(args.kwonlyargs) == 0)
+        assert(len(args.kw_defaults) == 0)
+        assert(args.kwarg == None)
+        assert(len(args.defaults) == 0)
+
+    # Visitors for expressions
+    def checked_visit_expr(self, e: ast.expr):
+        r = self.visit(e)
+        if r == None:
+            raise Exception(f'Unsupported expression {type(e)}')
+
+    def visit_Attribute(self, a: ast.Attribute):
+        self.checked_visit_expr(a.value)
+        if isinstance(a.ctx, ast.Load):
+            return True
+        elif isinstance(a.ctx, ast.Store):
+            raise Exception(f'Store attribute unsupported.')
+        elif isinstance(a.ctx, ast.Del):
+            raise Exception(f'Delete attribute unsupported.')
+        else:
+            raise Exception(f'Unknown context {type(a.ctx)}')
+
+    def visit_BinOp(self, e: ast.BinOp) -> bool:
+        self.checked_visit_expr(e.left)
+        self.checked_visit_expr(e.right)
+        return True
+
+    def visit_Call(self, c: ast.Call) -> bool:
+        self.checked_visit_expr(c.func)
+        for a in c.args:
+            self.checked_visit_expr(a)
+        for k in c.keywords:
+            self.checked_visit_expr(k.value)
+        return True
+
+    def visit_Compare(self, e: ast.Compare) -> bool:
+        self.checked_visit_expr(e.left)
+        for r in e.comparators:
+            self.checked_visit_expr(r)
+        return True
+
+    def visit_Constant(self, c: ast.Constant) -> bool:
+        return True
+
+    def visit_FormattedValue(self, fv: ast.FormattedValue) -> bool:
+        self.checked_visit_expr(fv.value)
+        if fv.conversion != -1:
+            raise Exception(f'Conversion unsupported')
+        if fv.format_spec != None:
+            self.checked_visit_expr(fv.format_spec)
+        return True
+
+    def visit_GeneratorExp(self, node: ast.GeneratorExp) -> bool:
+        return True # FIXME
+
+    # See https://www.python.org/dev/peps/pep-0498/
+    def visit_JoinedStr(self, s: ast.JoinedStr) -> bool:
+        for a in s.values:
+            self.checked_visit_expr(a)
+        return True
+
+    def visit_Lambda(self, e: ast.Lambda) -> bool:
+        # Create variable capture
+        var_capture = VariableCapture(self.map)
+        var_capture.addArgs(e.args)
+        var_capture.checked_visit_expr(e.body)
+        self.close_scope(id(e), var_capture)
+        return True
+
+    def visit_List(self, e: ast.List) -> bool:
+        for x in e.elts:
+            self.checked_visit_expr(x)
+        return True
+
+    # List comprehensions such [f(x) for i in x for j in y] may
+    # introduce multiple scopes.  We introduce the capture scopes
+    # to record references.
+    def visit_ListComp(self, e: ast.ListComp) -> bool:
+        # Get generatores
+        gen = e.generators
+        # Store current capture
+        var_capture = self
+        # List of variable capture values with outer capture first.
+        captures = [None]*len(gen)
+        for i in range(len(gen)):
+            g = gen[i]
+            assert(not g.is_async)
+            assert(len(g.ifs) == 0)
+            var_capture.checked_visit_expr(g.iter)
+
+            captures[i] = var_capture
+            var_capture = VariableCapture(self.map)
+            var_capture.addLhs(g.target)
+
+        var_capture.checked_visit_expr(e.elt)
+
+        # Pop captures
+        for i in range(len(gen)-1, -1, -1):
+            outer = captures[i]
+            outer.close_scope(id(gen[i]), var_capture)
+            var_capture = outer
+
+        return True
+
+    def visit_Name(self, node: ast.Name):
+        self.add_reference(node)
+        return True
+
+    def visit_Slice(self, e: ast.Slice):
+        if e.upper != None:
+            self.checked_visit_expr(e.upper)
+        if e.lower != None:
+            self.checked_visit_expr(e.lower)
+        if e.step != None:
+            self.checked_visit_expr(e.step)
+        return True
+
+    def visit_Subscript(self, e: ast.Subscript):
+        self.checked_visit_expr(e.value)
+        self.checked_visit_expr(e.slice)
+        return True
+
+    def visit_Tuple(self, e: ast.Tuple):
+        for e in e.elts:
+            self.checked_visit_expr(e)
+        return True
+
+    def visit_UnaryOp(self, e: ast.UnaryOp) -> bool:
+        self.checked_visit_expr(e.operand)
+        return True
+
+    # Visitors for statements
+
+    def visit_Assign(self, a: ast.Assign) -> bool:
+        self.checked_visit_expr(a.value)
+        for tgt in a.targets:
+            self.addAssignLhs(tgt)
+        return True
+
+    def visit_AugAssign(self, a: ast.AugAssign):
+        self.addAssignLhs(a.target)
+        self.checked_visit_expr(a.value)
+        return True
+
+    def visit_Expr(self, e: ast.Expr):
+        self.checked_visit_expr(e.value)
+        return True
+
+    def visit_For(self, s: ast.For) -> bool:
+        self.addLhs(s.target)
+        self.checked_visit_expr(s.iter)
+        self.visit_stmts(s.body)
+        self.visit_stmts(s.orelse)
+        return True
+
+    def visit_FunctionDef(self, s: ast.FunctionDef) -> bool:
+        self.addVar(s.name)
+
+        # Create variable capture
+        var_capture = VariableCapture(self.map)
+        var_capture.addArgs(s.args)
+        var_capture.visit_stmts(s.body)
+        self.close_scope(id(s), var_capture)
+        return True
+
+    def visit_If(self, s: ast.If) -> bool:
+        self.checked_visit_expr(s.test)
+        if s.body:
+            self.visit_stmts(s.body)
+        if s.orelse:
+            self.visit_stmts(s.orelse)
+        return True
+
+    def visit_Import(self, s: ast.Import):
+        for a in s.names:
+            self.addVar(a.asname or a.name)
+        return True
+
+    def visit_Return(self, node: ast.Return):
+        if node.value != None:
+            self.checked_visit_expr(node.value)
+        return True
+
+    # See https://docs.python.org/3/reference/compound_stmts.html#with
+    def visit_With(self, w: ast.With):
+        for item in w.items:
+            self.checked_visit_expr(item.context_expr)
+        self.visit_stmts(w.body)
+        return True
+
+    def visit_While(self, s: ast.While) -> bool:
+        self.checked_visit_expr(s.test)
+        self.visit_stmts(s.body)
+        self.visit_stmts(s.orelse)
+        return True
+
+    def checked_visit_stmt(self, e: ast.stmt):
+        r = self.visit(e)
+        if r == None:
+            raise Exception(f'Unsupported expression {type(e)}')
+
+    def visit_stmts(self, stmts):
+        for stmt in stmts:
+            self.checked_visit_stmt(stmt)
+
+CellMap = Dict[str, mlir.Value]
+
+def alloc_variable_cells(map: CellMap, names: list[mlir.StringAttr], cells: list[mlir.Value], block:mlir.Block, vars: Dict[str, None]):
+    with mlir.InsertionPoint(block):
+        for var in vars:
+            cell = python_d.CellAlloc()
+            map[var] = cell
+            names.append(mlir.StringAttr.get(var))
+            cells.append(cell)
+
+# This is the main class
+class Translator(ast.NodeVisitor):
+    _cell_map: CellMap
+    _scope_value: mlir.Value
+
+    def __init__(self,
+                 m: Module,
+                 block: mlir.Block,
+                 scope: mlir.Value,
+                 cell_map: CellMap):
         self.module = m
-        self.block = None
-        self.map = None
+        self.block = block
         self.onDone = None
         self.exceptBlock = None
+        self._cell_map = cell_map
+        self._scope_value = scope
 
     # Internal support
+    def assign_lhs(self, tgt: ast.expr, v:mlir.Value):
+        if isinstance(tgt, ast.Tuple):
+            n = len(tgt.elts)
+            with mlir.InsertionPoint(self.block):
+                python_d.TupleCheck(v, mlir.IntegerAttr.get(mlir.IntegerType.get_signed(64), n))
+                for i in range(0, n):
+                    sv = python_d.TupleGet(v, mlir.IntegerAttr.get(mlir.IntegerType.get_signed(64), i))
+                    self.assign_lhs(tgt.elts[i], sv)
+        elif isinstance(tgt, ast.Subscript):
+            a = self.checked_visit_expr(tgt.value)
+            idx = self.checked_visit_expr(tgt.slice)
+            with mlir.InsertionPoint(self.block):
+                python_d.ArraySet(a, idx, v)
+        elif isinstance(tgt, ast.Name):
+            cell_store(self.block, self._cell_map[tgt.id], v)
+        else:
+            raise Exception(f'Unexpected target {tgt.__class__.__name__} {tgt.lineno}:{tgt.col_offset}')
 
     def undef_value(self, e: ast.AST) -> mlir.Value:
         sys.stderr.write(f'Unsupported value {e.__class__.__name__} at {e.lineno}:{e.col_offset}\n')
@@ -124,7 +528,7 @@ class Analyzer(ast.NodeVisitor):
         valueType = python_d.ValueType.get()
         exceptBlock = self.block.create_after(valueType)
         with mlir.InsertionPoint(exceptBlock):
-            python_d.Throw(exceptBlock.arguments[0])
+            python_d.ThrowOp(exceptBlock.arguments[0])
 
         self.exceptBlock = exceptBlock
         return exceptBlock
@@ -144,7 +548,7 @@ class Analyzer(ast.NodeVisitor):
         returnBlock = self.block.create_after(valueType)
 
         with mlir.InsertionPoint(self.block):
-            python_d.Invoke(method, args, keyAttr, [], [], returnBlock, exceptBlock)
+            python_d.InvokeOp(method, args, keyAttr, [], [], returnBlock, exceptBlock)
 
         self.block = returnBlock
         return returnBlock.arguments[0]
@@ -157,13 +561,13 @@ class Analyzer(ast.NodeVisitor):
     # Import a module and give it the given name
     def pythonImport(self, module:str, name: str) -> mlir.Value:
         with mlir.InsertionPoint(self.block):
-            python_d.ScopeImport(self.map, mlir.StringAttr.get(module), mlir.StringAttr.get(name))
+            m = python_d.Module(mlir.StringAttr.get(module))
+            python_d.CellStore(self._cell_map[name], m)
 
     # Create a formatted string
     def joined_string(self, args: list[mlir.Value]) -> mlir.Value:
         with mlir.InsertionPoint(self.block):
             return python_d.FormattedString(args)
-
 
     def string_constant(self, c: str) -> mlir.Value:
         with mlir.InsertionPoint(self.block):
@@ -176,6 +580,7 @@ class Analyzer(ast.NodeVisitor):
             else:
                 return python_d.IntLit(mlir.StringAttr.get(str(c)))
 
+    # Create a nuiltin attribute
     def builtin(self, name: str):
         with mlir.InsertionPoint(self.block):
             return python_d.Builtin(mlir.StringAttr.get(name))
@@ -188,8 +593,10 @@ class Analyzer(ast.NodeVisitor):
         with mlir.InsertionPoint(self.block):
             func_d.ReturnOp([v])
 
-    def create_fun(self, name: str, args: ast.arguments):
+    # Create a tranlator for functions and value for denoting it.
+    def create_fun(self, name: str, args: ast.arguments, var_scope: VariableScope) -> tuple[Translator, mlir.Value] :
         scopeType = python_d.ScopeType.get()
+        cellType  = python_d.CellType.get()
         valueType = python_d.ValueType.get()
 
         assert(args.vararg == None)
@@ -201,31 +608,58 @@ class Analyzer(ast.NodeVisitor):
 
         symbol_name = self.module.fresh_symbol(name)
 
+        # Count arguments referenced in parent
+        captured_vars = var_scope.parent_vars
+        capture_count = len(captured_vars)
+
+        # Define arguments
+        arg_types = [scopeType] + capture_count*[cellType] + arg_count*[valueType]
+
         with mlir.InsertionPoint(self.module.mlir.body):
-            argTypes = [scopeType] + arg_count * [valueType]
-            tp = mlir.FunctionType.get(argTypes, [valueType])
+            tp = mlir.FunctionType.get(arg_types, [valueType])
             fun = builtin_d.FuncOp(symbol_name, tp)
-
-        fun_analyzer = Analyzer(self.module)
-        fun_analyzer.block = mlir.Block.create_at_start(fun.regions[0], argTypes)
-
-        with mlir.InsertionPoint(fun_analyzer.block):
-            fun_analyzer.map = python_d.ScopeExtend(fun_analyzer.block.arguments[0])
-
+        fun_block = mlir.Block.create_at_start(fun.regions[0], arg_types)
         # Initialize scope from function arguments.
+
+        fun_cell_map = {}
+
+        fun_name_attrs = []
+        fun_cells = []
+        # Add arguments for captured variables
+        closure_cells = []
+        for i in range(capture_count):
+            ast = captured_vars[i]
+            name = ast.id
+            with mlir.InsertionPoint(fun_block):
+                cell = python_d.CellAlloc()
+                python_d.CellStore(cell, fun_block.arguments[1+i])
+            fun_cell_map[name] = cell
+            fun_name_attrs.append(mlir.StringAttr.get(name))
+            fun_cells.append(cell)
+            closure_cells.append(self._lookup_cell(ast, name))
+
+        alloc_variable_cells(fun_cell_map, fun_name_attrs, fun_cells, fun_block,  var_scope.vars)
+
+        with mlir.InsertionPoint(fun_block):
+            fun_scope = python_d.ScopeExtend(fun_block.arguments[0], mlir.ArrayAttr.get(fun_name_attrs), fun_cells)
+
+        # Add explicit function arguments
         arg_names = []
         for i in range(arg_count):
             name = args.args[i].arg
-            value = fun_analyzer.block.arguments[1+i]
             arg_names.append(mlir.StringAttr.get(name))
-            scope_set(fun_analyzer.block, fun_analyzer.map, name, value)
+            arg_cell = fun_cell_map[name]
+            value = fun_block.arguments[1+capture_count+i]
+            cell_store(fun_block, arg_cell, value)
+
+        fun_translator = Translator(self.module, fun_block, fun_scope, fun_cell_map)
 
         symbol_attr = mlir.FlatSymbolRefAttr.get(symbol_name)
         arg_attrs = mlir.ArrayAttr.get(arg_names)
         with mlir.InsertionPoint(self.block):
-            fun_value = python_d.FunctionRef(symbol_attr, arg_attrs, self.map)
+            fun_value = python_d.FunctionRef(symbol_attr, arg_attrs, self._scope_value, closure_cells)
 
-        return fun_analyzer, fun_value
+        return fun_translator, fun_value
 
     # Expressions
     def checked_visit_expr(self, e: ast.expr) -> mlir.Value:
@@ -273,7 +707,7 @@ class Analyzer(ast.NodeVisitor):
         return returnBlock.arguments[0]
 
     def visit_BinOp(self, e: ast.BinOp) -> mlir.Value:
-        op = Analyzer.bin_operator_map.get(e.op.__class__)
+        op = Translator.bin_operator_map.get(e.op.__class__)
         if op == None:
             return self.undef_value(e)
 
@@ -292,7 +726,7 @@ class Analyzer(ast.NodeVisitor):
         for k in c.keywords:
             if k.arg == None:
                 raise Exception(f'Did not expect ** in call')
-            args.append(self.checked_visit_expr(a))
+            args.append(self.checked_visit_expr(k.value))
             keywords.append(k.arg)
         return self.invoke(f, args, keywords)
 
@@ -360,8 +794,8 @@ class Analyzer(ast.NodeVisitor):
         return self.joined_string(args)
 
     def visit_Lambda(self, e: ast.Lambda) -> mlir.Value:
-        funAnalyzer, fun_value = self.create_fun("_lambda", e.args)
-        funAnalyzer.returnOp(funAnalyzer.checked_visit_expr(e.body))
+        funTranslator, fun_value = self.create_fun("_lambda", e.args, self.module.get_scope(id(e)))
+        funTranslator.returnOp(funTranslator.checked_visit_expr(e.body))
         return fun_value
 
     def visit_List(self, e: ast.List) -> mlir.Value:
@@ -373,12 +807,12 @@ class Analyzer(ast.NodeVisitor):
         # Get identifier of block to throw
         throwBlock = self.get_except_block()
 
-        #
-        orig_map = self.map
+        # Save scope
+        orig_cell_map = self._cell_map
+        orig_scope = self._scope_value
+
+        # Create empty list for storing result.
         with mlir.InsertionPoint(self.block):
-            # Variables in comprehension do not escape.
-            self.map = python_d.ScopeExtend(orig_map)
-            # Create empty list for storing result.
             r = python_d.List([])
 
         # Get append method off of list.
@@ -387,34 +821,65 @@ class Analyzer(ast.NodeVisitor):
         # Create block for evaluating expression
         finalBlock = self.block.create_after()
         doneBlock = finalBlock
+        self._cell_map = orig_cell_map.copy()
         for g in e.generators:
             assert(not g.is_async)
             assert(len(g.ifs) == 0)
+
 
             l = self.checked_visit_expr(g.iter)
             i = self.invoke(self.get_method(l, '__iter__'), [])
             next = self.get_method(i, '__next__')
 
             nextBlock, self.block, bodyValue = invoke_next(next, self.block, doneBlock, throwBlock)
-            scope_set_lhs(self.block, self.map, g.target, bodyValue)
+
+            # Update cell_map
+            inner_var_scope = self.module.get_scope(id(g))
+            var_name_attrs = []
+            cells = []
+            alloc_variable_cells(self._cell_map, var_name_attrs, cells, self.block, inner_var_scope.vars)
+
+            with mlir.InsertionPoint(self.block):
+                # Variables in comprehension do not escape.
+                self._scope_value = python_d.ScopeExtend(self._scope_value, mlir.ArrayAttr.get(var_name_attrs), cells)
+
+            # Extend scope
+
+            self.assign_lhs(g.target, bodyValue)
             # Map done block to next so other loop.
             doneBlock = nextBlock
 
         e = self.checked_visit_expr(e.elt)
+        # Append element to list
         self.invoke(append, [e])
 
         with mlir.InsertionPoint(self.block):
             cf_d.BranchOp([], doneBlock)
 
         self.block = finalBlock
-        self.map = orig_map
+        self._cell_map = orig_cell_map
+        self._scope_value = orig_scope
 
         return l
 
-    def visit_Name(self, node: ast.Name):
-        return scope_get(self.block, self.map, node.id)
+    def _lookup_cell(self, loc: ast.AST, name: str) -> mlir.Value:
+        try:
+            return self._cell_map[name]
+        except KeyError:
+            raise Exception(f'Could not find variable {name} at {loc.lineno}:{loc.col_offset}')
 
-    def visit_Slice(self, e: ast.Slice):
+    def visit_Name(self, node: ast.Name) -> mlir.Value:
+        name = node.id
+        try:
+            cell = self._cell_map[name]
+            return cell_load(self.block, cell)
+        except KeyError:
+            mlir_name = builtin_mlir_name(name)
+            if mlir_name == None:
+                raise Exception(f'Could not find variable {node.id} at {node.lineno}:{node.col_offset}')
+            return self.builtin(mlir_name)
+
+    def visit_Slice(self, e: ast.Slice) -> mlir.Value:
         upper = self.checked_visit_expr(e.upper) if e.upper != None else self.none_value()
 
         sliceFn = self.builtin('slice')
@@ -447,7 +912,7 @@ class Analyzer(ast.NodeVisitor):
     }
 
     def visit_UnaryOp(self, e: ast.UnaryOp) -> mlir.Value:
-        op = Analyzer.unary_operator_map.get(e.op.__class__)
+        op = Translator.unary_operator_map.get(e.op.__class__)
         if op == None:
             return self.undef_value(e)
 
@@ -470,7 +935,7 @@ class Analyzer(ast.NodeVisitor):
             raise Exception(f'Unsupported expression {type(e)}')
         return r
 
-    def visitStmts(self, stmts):
+    def visit_stmts(self, stmts):
         for stmt in stmts:
             if not self.checked_visit_stmt(stmt):
                 return False
@@ -481,7 +946,7 @@ class Analyzer(ast.NodeVisitor):
             raise Exception('Assignment must have single left-hand side.')
         tgt = a.targets[0]
         r = self.checked_visit_expr(a.value)
-        scope_set_lhs(self.block, self.map, tgt, r)
+        self.assign_lhs(tgt, r)
         return True
 
     def visit_AugAssign(self, node: ast.AugAssign):
@@ -506,11 +971,11 @@ class Analyzer(ast.NodeVisitor):
         doneBlock = self.block.create_after()
 
         nextBlock, bodyBlock, value = invoke_next(next, self.block, doneBlock, throwBlock)
-        scope_set_lhs(bodyBlock, self.map, s.target, value)
 
         # Get value for loop
         self.block = bodyBlock
-        bodyCont = self.visitStmts(s.body)
+        self.assign_lhs(s.target, value)
+        bodyCont = self.visit_stmts(s.body)
         if bodyCont:
             with mlir.InsertionPoint(self.block):
                 cf_d.BranchOp([], nextBlock)
@@ -519,13 +984,13 @@ class Analyzer(ast.NodeVisitor):
         return True
 
     def visit_FunctionDef(self, s: ast.FunctionDef):
-        funAnalyzer, fun_value = self.create_fun(s.name, s.args)
-
-        cont = funAnalyzer.visitStmts(s.body)
+        fun_translator, fun_value = self.create_fun(s.name, s.args, self.module.get_scope(id(s)))
+        cont = fun_translator.visit_stmts(s.body)
         if cont:
-            funAnalyzer.returnOp(funAnalyzer.none_value())
+            fun_translator.returnOp(fun_translator.none_value())
 
-        scope_set(self.block, self.map, s.name, fun_value)
+        # Fixme lookup cell value in map
+        cell_store(self.block, self._cell_map[s.name], fun_value)
 
         return True
 
@@ -536,11 +1001,10 @@ class Analyzer(ast.NodeVisitor):
         initBlock = self.block
         newBlock = self.block.create_after()
 
-
         if s.orelse:
             falseBlock = initBlock.create_after()
             self.block = falseBlock
-            if self.visitStmts(s.orelse):
+            if self.visit_stmts(s.orelse):
                 with mlir.InsertionPoint(self.block):
                     cf_d.BranchOp([], newBlock)
         else:
@@ -549,7 +1013,7 @@ class Analyzer(ast.NodeVisitor):
         if s.body:
             trueBlock = initBlock.create_after()
             self.block = trueBlock
-            if self.visitStmts(s.body):
+            if self.visit_stmts(s.body):
                 with mlir.InsertionPoint(self.block):
                     cf_d.BranchOp([], newBlock)
         else:
@@ -572,7 +1036,7 @@ class Analyzer(ast.NodeVisitor):
         if node.value != None:
             ret = self.checked_visit_expr(node.value)
         else:
-            ret = self.funAnalyzer.none_value()
+            ret = self.funTranslator.none_value()
         self.returnOp(ret)
 
         return False
@@ -590,7 +1054,7 @@ class Analyzer(ast.NodeVisitor):
             var = item.optional_vars
             if var != None:
                 assert(isinstance(var, ast.Name))
-                scope_set(self.block, self.map, var.id, r)
+                cell_store(self.block, self.map[var.id], r)
             exitMethods.append(exit)
         prevDone = self.onDone
         def onDone():
@@ -599,27 +1063,11 @@ class Analyzer(ast.NodeVisitor):
             if prevDone:
                 prevDone()
         self.onDone = onDone
-        cont = self.visitStmts(w.body)
+        cont = self.visit_stmts(w.body)
         self.onDone = prevDone
         if cont:
             onDone()
         return cont
-
-    def visit_Module(self, m: ast.Module):
-        with mlir.InsertionPoint(self.module.mlir.body):
-            tp = mlir.FunctionType.get([], [])
-            script_main = builtin_d.FuncOp("script_main", tp)
-
-        self.block = mlir.Block.create_at_start(script_main.regions[0])
-
-        with mlir.InsertionPoint(self.block):
-            self.map = python_d.ScopeInit()
-
-        cont = self.visitStmts(m.body)
-        if cont:
-            with mlir.InsertionPoint(self.block):
-                func_d.ReturnOp([])
-        return True
 
     def visit_While(self, s: ast.While) -> bool:
         if len(s.orelse) > 0:
@@ -639,13 +1087,48 @@ class Analyzer(ast.NodeVisitor):
 
         # Execute loop body
         self.block = bodyBlock
-        bodyCont = self.visitStmts(s.body)
+        bodyCont = self.visit_stmts(s.body)
         if bodyCont:
             with mlir.InsertionPoint(self.block):
                 cf_d.BranchOp([], testBlock)
 
         self.block = doneBlock
         return True
+
+def translateModule(tree) -> mlir.Module:
+    m = mlir.Module.create()
+
+    scope_map = {}
+    varCapture = VariableCapture(scope_map)
+    varCapture.visit_stmts(tree.body)
+    if len(varCapture.references) > 0:
+        msg = "Unknown variables:\n"
+        for a in varCapture.references.values():
+            msg = f'{msg}  {a.lineno}:{a.col_offset}: {a.id}\n'
+        raise Exception(msg)
+    var_scope = varCapture.mkScope()
+
+    mod = Module(m, scope_map)
+
+    with mlir.InsertionPoint(mod.mlir.body):
+        tp = mlir.FunctionType.get([], [])
+        fun = builtin_d.FuncOp("script_main", tp)
+    fun_block = mlir.Block.create_at_start(fun.regions[0], [])
+    if len(var_scope.parent_vars) > 0:
+        raise Exception(f"Did not expect unknown variables {var_scope.parent_vars}")
+
+    global_cell_map = {}
+    fun_name_attrs = []
+    fun_cells = []
+    alloc_variable_cells(global_cell_map, fun_name_attrs, fun_cells, fun_block, var_scope.vars)
+    with mlir.InsertionPoint(fun_block):
+        fun_scope = python_d.ScopeInit(mlir.ArrayAttr.get(fun_name_attrs), fun_cells)
+    t = Translator(mod, fun_block, fun_scope, global_cell_map)
+    cont = t.visit_stmts(tree.body)
+    if cont:
+        with mlir.InsertionPoint(t.block):
+            func_d.ReturnOp([])
+    return m
 
 def main():
     if len(sys.argv) != 2:
@@ -658,10 +1141,7 @@ def main():
     with mlir.Context() as ctx, mlir.Location.file("f.mlir", line=42, col=1, context=ctx):
         python_d.register_dialect()
 #        ctx.allow_unregistered_dialects = True
-        m = mlir.Module.create()
-        analyzer = Analyzer(Module(m))
-        r = analyzer.visit(tree)
-    assert (r is not None)
+        m = translateModule(tree)
     print(str(m))
 
 if __name__ == "__main__":

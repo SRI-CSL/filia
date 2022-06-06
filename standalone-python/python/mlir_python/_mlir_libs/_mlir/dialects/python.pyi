@@ -9,20 +9,29 @@ from mlir.ir import Type, Context
 __all__ = [
     'PythonType',
     'ValueType',
+    'CellType',
+    'ScopeType'
 ]
 
 class PythonType(Type):
   @staticmethod
   def isinstance(type: Type) -> bool: ...
 
-class ValueType(Type):
+class ValueType(PythonType):
   @staticmethod
   def isinstance(type: Type) -> bool: ...
 
   @staticmethod
   def get(context: Optional[Context] = None) -> ValueType: ...
 
-class ScopeType(Type):
+class CellType(PythonType):
+  @staticmethod
+  def isinstance(type: Type) -> bool: ...
+
+  @staticmethod
+  def get(context: Optional[Context] = None) -> ValueType: ...
+
+class ScopeType(PythonType):
   @staticmethod
   def isinstance(type: Type) -> bool: ...
 

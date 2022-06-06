@@ -468,12 +468,12 @@ void ScopeOptimization::analyzeBlock(mlir::Block* block, LocalsDomain& locals) {
       locals.scope_init(derivedOp);
     } else if (auto derivedOp = mlir::dyn_cast<mlir::python::ScopeExtend>(opPtr)) {
       locals.scope_extend(derivedOp);
-    } else if (auto derivedOp = mlir::dyn_cast<mlir::python::ScopeImport>(opPtr)) {
-      locals.scope_import(derivedOp);
+    //} else if (auto derivedOp = mlir::dyn_cast<mlir::python::ScopeImport>(opPtr)) {
+    //  locals.scope_import(derivedOp);
     } else if (auto op = mlir::dyn_cast<mlir::python::ScopeGet>(opPtr)) {
       // Do nothing
-    } else if (auto op = mlir::dyn_cast<mlir::python::ScopeSet>(opPtr)) {
-      locals.scope_domain(op.scope()).setValue(op.name(), op.value());
+    //} else if (auto op = mlir::dyn_cast<mlir::python::ScopeSet>(opPtr)) {
+    //  locals.scope_domain(op.scope()).setValue(op.name(), op.value());
     } else if (mlir::isa<mlir::python::FunctionRef>(opPtr)) {
       // Do nothing
     } else {
@@ -698,8 +698,8 @@ void ScopeOptimization::optimizeBlock(
       locals.scope_init(derivedOp);
     } else if (auto derivedOp = mlir::dyn_cast<mlir::python::ScopeExtend>(opPtr)) {
       locals.scope_extend(derivedOp);
-    } else if (auto derivedOp = mlir::dyn_cast<mlir::python::ScopeImport>(opPtr)) {
-      locals.scope_import(derivedOp);
+//    } else if (auto derivedOp = mlir::dyn_cast<mlir::python::ScopeImport>(opPtr)) {
+//      locals.scope_import(derivedOp);
     } else if (auto op = mlir::dyn_cast<mlir::python::ScopeGet>(opPtr)) {
       mlir::OpBuilder builder(op.getContext());
       builder.setInsertionPoint(op);
@@ -708,8 +708,8 @@ void ScopeOptimization::optimizeBlock(
         origResult.replaceAllUsesWith(v);
         toDelete.push_back(op);
       }
-    } else if (auto op = mlir::dyn_cast<mlir::python::ScopeSet>(opPtr)) {
-      locals.scope_domain(op.scope()).setValue(op.name(), op.value());
+//    } else if (auto op = mlir::dyn_cast<mlir::python::ScopeSet>(opPtr)) {
+//      locals.scope_domain(op.scope()).setValue(op.name(), op.value());
     } else if (auto op = mlir::dyn_cast<mlir::python::FunctionRef>(opPtr)) {
       // FIXME: Collect invariants about closure passed into function.
     } else {
@@ -745,9 +745,6 @@ void ScopeOptimization::analyzeFunction(mlir::FuncOp fun) {
     return;
   }
 
-  /// Build map from block to scopes they read to the values from each scope.
-  llvm::DenseMap<llvm::StringRef, ValueDomain> map;
-
   BlockInvariantFixpointQueue inv(&*blks.begin());
   while (inv.hasNext()) {
     auto& p = inv.nextBlock();
@@ -779,15 +776,6 @@ void ScopeOptimization::analyzeFunction(mlir::FuncOp fun) {
     // Optimize operations in block
     LocalsDomain blockScopes(argInfo.startDomain);
     optimizeBlock(inv, block, argVec, blockScopes);
-
-/*
-    if (addSucc) {
-      mlir::OpBuilder builder(ctx);
-      builder.setInsertionPoint(&block->back());
-      // Add extra operands for successor blocks.
-      inv.addSuccessors(fvtm, block, builder, argVec, blockScopes);
-    }
-    */
   }
 }
 

@@ -205,7 +205,8 @@ public:
 };
 
 /**
- * This maps values in the block for scopes to the abstract domain associated with them.
+ * This maps values in the block to the scope domain describing the invariants for
+ * locals at a particular program location.
  */
 class LocalsDomain {
   // Map values for scope variables to the associated domain.
@@ -253,6 +254,7 @@ public:
       fatal_error("Scope already defined.");
   }
 
+/*
   void scope_import(mlir::python::ScopeImport op) {
     auto& m = scope_domain(op.scope());
     m.import(op.module(), op.asName());
@@ -261,6 +263,7 @@ public:
   void scope_set(mlir::python::ScopeSet op) {
     scope_domain(op.scope()).setValue(op.name(), op.value());
   }
+*/
 
   mlir::Value getScopeValue(mlir::Value scope,
                             llvm::StringRef name,

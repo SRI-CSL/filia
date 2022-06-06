@@ -55,6 +55,15 @@ PYBIND11_MODULE(_pythonDialects, m) {
       "Get an instance of ValueType in given context.", py::arg("cls"),
       py::arg("context") = py::none());
 
+  auto cellType = mlir_type_subclass(python_m, "CellType", mlirTypeIsAPythonValueType);
+  cellType.def_classmethod(
+      "get",
+      [](py::object cls, MlirContext ctx) {
+        return cls(mlirPythonValueTypeGet(ctx));
+      },
+      "Get an instance of CellType in given context.", py::arg("cls"),
+      py::arg("context") = py::none());
+
   auto scopeType = mlir_type_subclass(python_m, "ScopeType", mlirTypeIsAPythonScopeType);
   scopeType.def_classmethod(
       "get",

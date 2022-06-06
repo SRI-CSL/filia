@@ -13,16 +13,24 @@ class Python_Type<string name, string typeMnemonic>
 }
 
 def Python_Value : Python_Type<"Value", "value"> {
-  let summary = "Python value";
+  let summary = "A value in the Python language.";
   let description = [{
-    This type represents a Python variable value.
+    This denotes a Python variable value.  A value is immutable, but if it is
+    a class, then it's fields can be changed.
+  }];
+}
+
+def Python_Cell : Python_Type<"Cell", "cell"> {
+  let summary = "A cell for storing a Python value.";
+  let description = [{
+    This is a mutable cell that stores a Python value or may be unassigned.
   }];
 }
 
 def Python_Scope : Python_Type<"Scope", "scope"> {
-  let summary = "A scope maps names to the values.";
+  let summary = "A scope maps names to cells that store a value";
   let description = [{
-    This type represents a mapping from Python variable names to values.
+    A scope represents a mapping from Python variable names to values.
   }];
 }
 

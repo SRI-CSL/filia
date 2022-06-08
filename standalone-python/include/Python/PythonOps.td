@@ -368,6 +368,44 @@ def Python_FunctionRef : Python_Op<"function_ref", [NoSideEffect]> {
     let assemblyFormat = "$fun `(` $arg_names `)` $scope `[` $capture `]` attr-dict `:` type($result)";
 }
 
+// Return  operators
+
+def Python_MkReturnOp : Python_Op<"mk_return", [NoSideEffect]> {
+    let summary = "Create a normal return value.";
+    let description = [{
+        This takes a Python value and constructs a return value.
+        Stores the value in the cell.
+    }];
+    let arguments = (ins Python_Value:$value);
+    let results = (outs Python_ReturnValue:$result);
+    let assemblyFormat = "$value attr-dict `:` type($result)";
+}
+
+def Python_MkExceptOp : Python_Op<"mk_except", [NoSideEffect]> {
+    let summary = "Create an exception return value.";
+    let description = [{
+        Stores the value in the cell.
+    }];
+    let arguments = (ins Python_Value:$value);
+    let results = (outs Python_ReturnValue:$result);
+    let assemblyFormat = "$value attr-dict `:` type($result)";
+}
+
+def Python_RetBranchOp : Python_Op<"ret_branch", [AttrSizedOperandSegments,Terminator]> {
+    let summary = "Jump to one block or another due to a return.";
+    let arguments = (ins Python_ReturnValue:$value,
+                     Variadic<AnyType>:$returnDestOperands,
+                     Variadic<AnyType>:$exceptDestOperands
+                     );
+    let successors = (successor AnySuccessor:$returnDest, AnySuccessor:$exceptDest);
+    let assemblyFormat = [{
+      $value `,`
+      $returnDest (`(` $returnDestOperands^ `:` type($returnDestOperands) `)`)? `,`
+      $exceptDest (`(` $exceptDestOperands^ `:` type($exceptDestOperands) `)`)?
+      attr-dict
+    }];
+}
+
 // Cell operators
 
 def Python_CellAlloc : Python_Op<"cell_alloc", [NoSideEffect]> {

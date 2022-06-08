@@ -146,7 +146,7 @@ class BuiltinSet:
         return self._builtins.get(name)
 
 bc = BuiltinSet()
-def builtin_mlir_name(name: str) -> str|none:
+def builtin_mlir_name(name: str) -> str|None:
     return bc.builtin_mlir_name(name)
 
 # Represent a scope
@@ -226,7 +226,7 @@ class VariableCapture(ast.NodeVisitor):
         return VariableScope(self.vars, self.references)
 
     # Record variable with name defined in this scope.
-    def addVar(self, name: str):
+    def addVar(self, ast: ast.AST, name: str):
         self.vars[name] = None
         self.references.pop(name, None)
 
@@ -236,7 +236,7 @@ class VariableCapture(ast.NodeVisitor):
             for i in range(0, n):
                 self.addLhs(tgt.elts[i])
         elif isinstance(tgt, ast.Name):
-            self.addVar(tgt.id)
+            self.addVar(tgt, tgt.id)
         else:
             raise Exception(f'Unexpected target {tgt.__class__.__name__} {tgt.lineno}:{tgt.col_offset}')
 
@@ -252,7 +252,7 @@ class VariableCapture(ast.NodeVisitor):
 
     def addArgs(self, args: ast.arguments):
         for a in args.args:
-            self.addVar(a.arg)
+            self.addVar(a, a.arg)
         assert(args.vararg == None)
         assert(len(args.kwonlyargs) == 0)
         assert(len(args.kw_defaults) == 0)
@@ -410,7 +410,7 @@ class VariableCapture(ast.NodeVisitor):
         return True
 
     def visit_FunctionDef(self, s: ast.FunctionDef) -> bool:
-        self.addVar(s.name)
+        self.addVar(s, s.name)
 
         # Create variable capture
         var_capture = VariableCapture(self.map)
@@ -429,7 +429,7 @@ class VariableCapture(ast.NodeVisitor):
 
     def visit_Import(self, s: ast.Import):
         for a in s.names:
-            self.addVar(a.asname or a.name)
+            self.addVar(a, a.asname or a.name)
         return True
 
     def visit_Return(self, node: ast.Return):
@@ -528,7 +528,8 @@ class Translator(ast.NodeVisitor):
         valueType = python_d.ValueType.get()
         exceptBlock = self.block.create_after(valueType)
         with mlir.InsertionPoint(exceptBlock):
-            python_d.ThrowOp(exceptBlock.arguments[0])
+            r = python_d.MkExceptOp(exceptBlock.arguments[0])
+            func_d.ReturnOp([r])
 
         self.exceptBlock = exceptBlock
         return exceptBlock
@@ -591,13 +592,14 @@ class Translator(ast.NodeVisitor):
 
     def returnOp(self, v: mlir.Value):
         with mlir.InsertionPoint(self.block):
-            func_d.ReturnOp([v])
+            func_d.ReturnOp([python_d.MkReturnOp(v)])
 
     # Create a tranlator for functions and value for denoting it.
     def create_fun(self, name: str, args: ast.arguments, var_scope: VariableScope) -> tuple[Translator, mlir.Value] :
         scopeType = python_d.ScopeType.get()
         cellType  = python_d.CellType.get()
         valueType = python_d.ValueType.get()
+        returnValueType = python_d.ReturnValueType.get()
 
         assert(args.vararg == None)
         assert(len(args.kwonlyargs) == 0)
@@ -616,7 +618,7 @@ class Translator(ast.NodeVisitor):
         arg_types = [scopeType] + capture_count*[cellType] + arg_count*[valueType]
 
         with mlir.InsertionPoint(self.module.mlir.body):
-            tp = mlir.FunctionType.get(arg_types, [valueType])
+            tp = mlir.FunctionType.get(arg_types, [returnValueType])
             fun = builtin_d.FuncOp(symbol_name, tp)
         fun_block = mlir.Block.create_at_start(fun.regions[0], arg_types)
         # Initialize scope from function arguments.
@@ -630,9 +632,7 @@ class Translator(ast.NodeVisitor):
         for i in range(capture_count):
             ast = captured_vars[i]
             name = ast.id
-            with mlir.InsertionPoint(fun_block):
-                cell = python_d.CellAlloc()
-                python_d.CellStore(cell, fun_block.arguments[1+i])
+            cell = fun_block.arguments[1+i]
             fun_cell_map[name] = cell
             fun_name_attrs.append(mlir.StringAttr.get(name))
             fun_cells.append(cell)
@@ -965,7 +965,6 @@ class Translator(ast.NodeVisitor):
         i = self.invoke(enter, [])
         next = self.get_method(i, '__next__')
 
-
         throwBlock = self.get_except_block()
 
         doneBlock = self.block.create_after()
@@ -1111,7 +1110,8 @@ def translateModule(tree) -> mlir.Module:
     mod = Module(m, scope_map)
 
     with mlir.InsertionPoint(mod.mlir.body):
-        tp = mlir.FunctionType.get([], [])
+        returnValueType = python_d.ReturnValueType.get()
+        tp = mlir.FunctionType.get([], [returnValueType])
         fun = builtin_d.FuncOp("script_main", tp)
     fun_block = mlir.Block.create_at_start(fun.regions[0], [])
     if len(var_scope.parent_vars) > 0:
@@ -1127,11 +1127,11 @@ def translateModule(tree) -> mlir.Module:
     cont = t.visit_stmts(tree.body)
     if cont:
         with mlir.InsertionPoint(t.block):
-            func_d.ReturnOp([])
+            func_d.ReturnOp([python_d.MkReturnOp(python_d.NoneOp())])
     return m
 
 def main():
-    if len(sys.argv) != 2:
+    if not len(sys.argv) in [2,3]:
         sys.stderr.write("Please specify input file.\n")
         sys.exit(-1)
     path = sys.argv[1]
@@ -1142,7 +1142,13 @@ def main():
         python_d.register_dialect()
 #        ctx.allow_unregistered_dialects = True
         m = translateModule(tree)
-    print(str(m))
+
+    if len(sys.argv) >= 3:
+        out_path = sys.argv[2]
+        with open(out_path, "w") as tgt:
+            tgt.write(str(m))
+    else:
+        print(str(m))
 
 if __name__ == "__main__":
     main()

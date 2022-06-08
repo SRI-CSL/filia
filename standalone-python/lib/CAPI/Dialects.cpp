@@ -24,8 +24,24 @@ bool mlirTypeIsAPythonValueType(MlirType type) {
   return unwrap(type).isa<python::ValueType>();
 }
 
+MlirType mlirPythonReturnValueTypeGet(MlirContext ctx) {
+  return wrap(python::ReturnValueType::get(unwrap(ctx)));
+}
+
+bool mlirTypeIsAPythonReturnValueType(MlirType type) {
+  return unwrap(type).isa<python::ReturnValueType>();
+}
+
 MlirType mlirPythonValueTypeGet(MlirContext ctx) {
   return wrap(python::ValueType::get(unwrap(ctx)));
+}
+
+bool mlirTypeIsAPythonCellType(MlirType type) {
+  return unwrap(type).isa<python::CellType>();
+}
+
+MlirType mlirPythonCellTypeGet(MlirContext ctx) {
+  return wrap(python::CellType::get(unwrap(ctx)));
 }
 
 bool mlirTypeIsAPythonScopeType(MlirType type) {

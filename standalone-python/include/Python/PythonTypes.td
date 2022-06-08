@@ -34,4 +34,12 @@ def Python_Scope : Python_Type<"Scope", "scope"> {
   }];
 }
 
+def Python_ReturnValue : Python_Type<"ReturnValue", "return_value"> {
+  let summary = "This defines either a Python value or an exception.";
+  let description = [{
+    This is a Python value or an exception (which should derive from BaseException).
+    It is used for returning from Python functions.
+  }];
+}
+
 #endif // MLIR_DIALECT_PYTHON_IR_PYTHONTYPES

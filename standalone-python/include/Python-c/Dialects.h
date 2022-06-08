@@ -17,6 +17,12 @@ MLIR_CAPI_EXPORTED bool mlirTypeIsAPythonType(MlirType type);
 MLIR_CAPI_EXPORTED bool mlirTypeIsAPythonValueType(MlirType type);
 MLIR_CAPI_EXPORTED MlirType mlirPythonValueTypeGet(MlirContext ctx);
 
+MLIR_CAPI_EXPORTED bool mlirTypeIsAPythonReturnValueType(MlirType type);
+MLIR_CAPI_EXPORTED MlirType mlirPythonReturnValueTypeGet(MlirContext ctx);
+
+MLIR_CAPI_EXPORTED bool mlirTypeIsAPythonCellType(MlirType type);
+MLIR_CAPI_EXPORTED MlirType mlirPythonCellTypeGet(MlirContext ctx);
+
 MLIR_CAPI_EXPORTED bool mlirTypeIsAPythonScopeType(MlirType type);
 MLIR_CAPI_EXPORTED MlirType mlirPythonScopeTypeGet(MlirContext ctx);
 

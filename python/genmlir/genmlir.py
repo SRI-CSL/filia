@@ -1,6 +1,7 @@
 from __future__ import annotations
 import ast
 import sys
+import logging
 from typing import Dict
 
 import mlir_python.ir as mlir
@@ -10,16 +11,6 @@ from mlir_python.dialects import (
   func as func_d,
   python as python_d
 )
-
-# Allocate a cell
-def cell_alloc(block: mlir.Block) -> mlir.Value:
-    with mlir.InsertionPoint(block):
-        return python_d.CellAlloc()
-
-# Return value stored in the cell.
-def cell_load(block: mlir.Block, cell: mlir.Value) -> mlir.Value:
-    with mlir.InsertionPoint(block):
-        return python_d.CellLoad(cell)
 
 # Set value stored in cell.
 def cell_store(block: mlir.Block, cell: mlir.Value, value: mlir.Value):
@@ -464,7 +455,7 @@ CellMap = Dict[str, mlir.Value]
 def alloc_variable_cells(map: CellMap, names: list[mlir.StringAttr], cells: list[mlir.Value], block:mlir.Block, vars: Dict[str, None]):
     with mlir.InsertionPoint(block):
         for var in vars:
-            cell = python_d.CellAlloc()
+            cell = python_d.CellAlloc(None)
             map[var] = cell
             names.append(mlir.StringAttr.get(var))
             cells.append(cell)
@@ -730,8 +721,7 @@ class Translator(ast.NodeVisitor):
             keywords.append(k.arg)
         return self.invoke(f, args, keywords)
 
-
-    # FIXME Make static
+    # Maps comparison operators from AST to MLIR operator
     comparison_map = {
         ast.Eq : python_d.EqOp,
         ast.Gt : python_d.GtOp,
@@ -799,7 +789,9 @@ class Translator(ast.NodeVisitor):
         return fun_value
 
     def visit_List(self, e: ast.List) -> mlir.Value:
-        args = map(self.checked_visit_expr, e.elts)
+        args = []
+        for a in e.elts:
+            args.append(self.checked_visit_expr(a))
         with mlir.InsertionPoint(self.block):
             return python_d.List(args)
 
@@ -872,12 +864,20 @@ class Translator(ast.NodeVisitor):
         name = node.id
         try:
             cell = self._cell_map[name]
-            return cell_load(self.block, cell)
         except KeyError:
             mlir_name = builtin_mlir_name(name)
-            if mlir_name == None:
-                raise Exception(f'Could not find variable {node.id} at {node.lineno}:{node.col_offset}')
-            return self.builtin(mlir_name)
+            if mlir_name != None:
+                return self.builtin(mlir_name)
+            raise Exception(f'Could not find variable {node.id} at {node.lineno}:{node.col_offset}')
+
+        valueType = python_d.ValueType.get()
+        exceptBlock = self.get_except_block()
+        returnBlock = self.block.create_after(valueType)
+        with mlir.InsertionPoint(self.block):
+            r = python_d.CellLoad(cell, mlir.StringAttr.get(name))
+            python_d.RetBranchOp(r, [], [], returnBlock, exceptBlock)
+        self.block = returnBlock
+        return returnBlock.arguments[0]
 
     def visit_Slice(self, e: ast.Slice) -> mlir.Value:
         upper = self.checked_visit_expr(e.upper) if e.upper != None else self.none_value()
@@ -900,9 +900,12 @@ class Translator(ast.NodeVisitor):
         return self.invoke(getitem, [slice])
 
     def visit_Tuple(self, e: ast.Tuple):
-        args = map(self.checked_visit_expr, e.elts)
+        x_id = id(self.block)
+        args = []
+        for a in e.elts:
+            args.append(self.checked_visit_expr(a))
         with mlir.InsertionPoint(self.block):
-            return python_d.Tuple(args)
+            return python_d.TupleOp(args)
 
     unary_operator_map = {
         ast.Invert: python_d.InvertOp,
@@ -949,8 +952,15 @@ class Translator(ast.NodeVisitor):
         self.assign_lhs(tgt, r)
         return True
 
-    def visit_AugAssign(self, node: ast.AugAssign):
-        #FIXME
+    def visit_AugAssign(self, a: ast.AugAssign):
+        tgt = a.target
+        op = Translator.bin_operator_map.get(a.op.__class__)
+        if op == None:
+            return self.undef_value(a)
+        left = self.checked_visit_expr(tgt)
+        right = self.checked_visit_expr(a.value)
+        r = self.apply_binop(left, op, right)
+        self.assign_lhs(tgt, r)
         return True
 
     def visit_Expr(self, e: ast.Expr):
@@ -988,7 +998,6 @@ class Translator(ast.NodeVisitor):
         if cont:
             fun_translator.returnOp(fun_translator.none_value())
 
-        # Fixme lookup cell value in map
         cell_store(self.block, self._cell_map[s.name], fun_value)
 
         return True

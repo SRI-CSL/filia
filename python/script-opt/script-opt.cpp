@@ -14,6 +14,7 @@ int main(int argc, char **argv) {
 
   mlir::DialectRegistry registry;
   registry.insert<mlir::js::JavaScriptDialect,
+                  mlir::cf::ControlFlowDialect,
                   mlir::python::PythonDialect,
                   mlir::arith::ArithmeticDialect,
                   mlir::func::FuncDialect>();

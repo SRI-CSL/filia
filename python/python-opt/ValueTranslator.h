@@ -34,25 +34,20 @@ bool operator==(const ScopeField& x, const ScopeField& y) {
 }
 
 /**
- * Store additional arguments to create for blocks for passing Python values
- * directly instead of via scopes.
- *
+ * Stores information about potential additional arguments to create for blocks
+ * for passing Python values directly instead of via cells.
  */
 struct BlockArgInfo {
 private:
-  // Block this arg info is for..
-  mlir::Block* block;
 public:
   LocalsDomain startDomain;
 
 
   // Map from scope fields to a unique index that identifies them.
-  llvm::DenseMap<ScopeField, unsigned> argMap;
-  std::vector<std::pair<ScopeField, std::vector<mlir::Location>> > argVec;
+  llvm::DenseMap<mlir::Value, unsigned> argMap;
+  std::vector<std::pair<mlir::Value, std::vector<mlir::Location>> > argVec;
 
-  BlockArgInfo(mlir::Block* b) : block(b) {
-    if (!b) fatal_error("BlockArgInfo given null block.");
-  }
+  BlockArgInfo(mlir::Block* b) : startDomain(b) { }
 
   BlockArgInfo() = delete;
   BlockArgInfo(BlockArgInfo&&) = default;
@@ -60,22 +55,18 @@ public:
   BlockArgInfo& operator=(const BlockArgInfo&) = delete;
 
   mlir::Block* getBlock() const {
-    //if (!block) {
-    //  fatal_error("getBlock() is null.");
-    //}
-    return block;
+    return startDomain.getBlock();
   }
 
   // Returns an index to represent a value stored at a particular scope value.
-  unsigned getLocalArg(const mlir::Value& scope, const llvm::StringRef name) {
-    ScopeField sf = { .scope = scope, .field = name };
-    auto i = argMap.find(sf);
+  unsigned getLocalArg(const mlir::Value& cell) {
+    auto i = argMap.find(cell);
     if (i != argMap.end())
       return i->second;
 
     unsigned r = argVec.size();
-    argMap.insert(std::make_pair(sf, r));
-    argVec.push_back(std::make_pair(sf, std::vector<mlir::Location>()));
+    argMap.insert(std::make_pair(cell, r));
+    argVec.push_back(std::make_pair(cell, std::vector<mlir::Location>()));
     return r;
   }
 
@@ -83,7 +74,7 @@ public:
    * Mark that a local argument is no longer needed.
    */
   void removeLocalArg(unsigned idx) {
-    argVec[idx].first.scope = mlir::Value();
+    argVec[idx].first = mlir::Value();
   }
 };
 
@@ -111,8 +102,8 @@ public:
   }
 
   // Returns an index to represent a value stored at a particular scope value.
-  unsigned getLocalArg(const mlir::Value& scope, const llvm::StringRef name) {
-    return argInfo.getLocalArg(scope, name);
+  unsigned getCellValueArg(const mlir::Value& cell) {
+    return argInfo.getLocalArg(cell);
   }
 
   void removeLocalArg(unsigned idx) {

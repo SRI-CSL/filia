@@ -28,14 +28,14 @@ def Python_Cell : Python_Type<"Cell", "cell"> {
 }
 
 def Python_Scope : Python_Type<"Scope", "scope"> {
-  let summary = "A scope maps names to cells that store a value";
+  let summary = "Python scope";
   let description = [{
     A scope represents a mapping from Python variable names to values.
   }];
 }
 
 def Python_ReturnValue : Python_Type<"ReturnValue", "return_value"> {
-  let summary = "This defines either a Python value or an exception.";
+  let summary = "Python return value";
   let description = [{
     This is a Python value or an exception (which should derive from BaseException).
     It is used for returning from Python functions.

@@ -318,7 +318,7 @@ def Python_List : Python_Op<"list", [NoSideEffect]> {
     let assemblyFormat = "`(` $args `)` attr-dict `:` type($result)";
 }
 
-def Python_Tuple : Python_Op<"tuple", [NoSideEffect]> {
+def Python_TupleOp : Python_Op<"tuple", [NoSideEffect]> {
     let summary = "Construct a tuple.";
     let description = [{
         Constructs a tuple from a list of arguments.
@@ -409,12 +409,14 @@ def Python_RetBranchOp : Python_Op<"ret_branch", [AttrSizedOperandSegments,Termi
 // Cell operators
 
 def Python_CellAlloc : Python_Op<"cell_alloc", [NoSideEffect]> {
-    let summary = "Create an empty cell for storing values.";
+    let summary = "Create a cell for storing values.";
     let description = [{
-        This creates an initial empty cell.
+        This creates a cell with an optional initial value.
+        If no value is defined then the cell is empty.
     }];
+    let arguments = (ins Optional<Python_Value>:$initial);
     let results = (outs Python_Cell:$result);
-    let assemblyFormat = "attr-dict `:` type($result)";
+    let assemblyFormat = "$initial attr-dict `:` type($result)";
 }
 
 def Python_CellStore : Python_Op<"cell_store", []> {
@@ -430,9 +432,11 @@ def Python_CellLoad : Python_Op<"cell_load", []> {
     let summary = "Returns the value currently stored in the cell.";
     let description = [{
         Returns the value currently stored in the cell.
+        This uses a ReturnValue so load returns the value if it is assigned
+        and an exception of type UnboundLocalError if the cell is empty.
     }];
-    let arguments = (ins Python_Cell:$cell);
-    let results = (outs Python_Value:$result);
+    let arguments = (ins Python_Cell:$cell, StrAttr:$name);
+    let results = (outs Python_ReturnValue:$result);
     let assemblyFormat = "$cell attr-dict `:` type($result)";
 }
 

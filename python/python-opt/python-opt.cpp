@@ -33,18 +33,14 @@ using BlockValueMap = llvm::DenseMap<mlir::Block*, llvm::DenseSet<mlir::Value>>;
  */
 static
 void populateDefinedValues(BlockValueMap& definedValues, mlir::Region* body) {
-  // Populate defined values
-  auto& blks = body->getBlocks();
-  for (auto blk = blks.begin(); blk != blks.end(); ++blk) {
-    auto p = definedValues.insert(std::make_pair(&*blk, llvm::DenseSet<mlir::Value>()));
-    auto& s = p.first->second;
-
-    for (auto op = blk->begin(); op != blk->end(); ++op) {
-      const auto& res = op->getResults();
-      for (const auto& r : res) {
-        s.insert(r);
-      }
+  for (auto& blk : body->getBlocks()) {
+    llvm::DenseSet<mlir::Value> s;
+    for (auto arg : blk.getArguments())
+      s.insert(arg);
+    for (auto& op : blk) {
+      s.insert(op.getResults().begin(), op.getResults().end());
     }
+    definedValues.try_emplace(&blk, std::move(s));
   }
 }
 
@@ -61,7 +57,7 @@ void populateInheritedValues(mlir::DominanceInfo& domInfo, BlockValueMap& inheri
   auto& blks = body->getBlocks();
   // Populate inherited values given defined values
   for (auto blk = blks.begin(); blk != blks.end(); ++blk) {
-    auto p = inheritedValues.insert(std::make_pair(&*blk, llvm::DenseSet<mlir::Value>()));
+    auto p = inheritedValues.try_emplace(&*blk);
     auto& s = p.first->second;
     auto node = domTree.getNode(&*blk);
     if (!node) continue;
@@ -141,7 +137,8 @@ public:
       auto& s = transMap.insert(std::make_pair(&*blk, SuccessorMap())).first->second;
 
       auto opPtr = &blk->back();
-      if (add_call_edges<mlir::python::InvokeOp>(s, opPtr)) {
+      if (add_call_edges<mlir::python::RetBranchOp>(s, opPtr)) {
+      } else if (add_call_edges<mlir::python::InvokeOp>(s, opPtr)) {
       } else if (add_call_edges<mlir::python::InvertOp>(s, opPtr)) {
       } else if (add_call_edges<mlir::python::NotOp>(s, opPtr)) {
       } else if (add_call_edges<mlir::python::UAddOp>(s, opPtr)) {
@@ -174,7 +171,7 @@ public:
       } else if (auto op = mlir::dyn_cast<mlir::cf::CondBranchOp>(opPtr)) {
         addSuccessorEdge(s, 0, op.getTrueDest(),  op.getTrueDestOperandsMutable());
         addSuccessorEdge(s, 0, op.getFalseDest(), op.getFalseDestOperandsMutable());
-      } else if (mlir::isa<mlir::python::ThrowOp>(opPtr)) {
+//      } else if (mlir::isa<mlir::python::ThrowOp>(opPtr)) {
         // Do nothing on throw
       } else if (mlir::isa<mlir::func::ReturnOp>(opPtr)) {
         // Do nothing on return
@@ -231,24 +228,17 @@ private:
   void addPending(mlir::Block* argInfo) {
     pending.push_back(argInfo);
   }
-
-  // Add a new block and locals domain.
-  BlockArgInfo* addNew(mlir::Block* b) {
-    if (!b)
-      fatal_error("addNew called with null block.");
-    auto i = blockMap.try_emplace(b, b).first;
-    auto r = &i->second;
-    addPending(b);
-    return r;
-  }
 public:
   BlockInvariantFixpointQueue(mlir::Block* entry) {
-    auto argInfo = addNew(entry);
-    // Declare scopes for arugments.
-    auto scopeTypeId = mlir::python::ScopeType::getTypeID();
-    for (auto iArg = entry->args_begin(); iArg != entry->args_end(); ++iArg) {
-      if (iArg->getType().getTypeID() == scopeTypeId)
-        argInfo->startDomain.scope_unknown(*iArg);
+    assert(entry != 0);
+    auto i = blockMap.try_emplace(entry, entry).first;
+    auto argInfo = &i->second;
+    addPending(entry);
+    // Declare scopes for argments.
+    auto cellTypeId = mlir::python::CellType::getTypeID();
+    for (auto a : entry->getArguments()) {
+      if (a.getType().getTypeID() == cellTypeId)
+        argInfo->startDomain.cellUnknown(a);
     }
   }
 
@@ -287,21 +277,6 @@ public:
                         mlir::Block* src,
                         const LocalsDomain& term);
 
-  /**
-   * Update local domains of all the successors for a given block.
-   *
-   * @param m Information about values defined in each block.
-   * @param src Block to update successors of
-   * @param term Abstract domain state for block at end.
-   */
-/*
-  void addSuccessors(FunctionValueTransitionMap& m,
-                     mlir::Block* src,
-                     mlir::OpBuilder& builder,
-                     const std::vector<mlir::Value> argValues,
-                     const LocalsDomain& term);
-*/
-
   void addSuccessors(
       std::vector<mlir::Value>& rng,
       mlir::Block* tgt,
@@ -323,13 +298,15 @@ BlockInvariantFixpointQueue::updateSuccessors(
   for (auto i = smap.begin(); i != smap.end(); ++i) {
 
     auto tgt = i->first;
+    assert(tgt != 0);
 
     const auto& inherited = m.getInheritedValues(tgt);
-    auto tgtDomainPtr = this->blockMap.find(tgt);
-    if (tgtDomainPtr == this->blockMap.end()) {
-      auto tgtArgInfo = addNew(tgt);
-      ValueTranslator translator(inherited, *tgtArgInfo);
-      tgtArgInfo->startDomain.populateFromPrev(translator, term);
+    auto tgtDomainPtr = blockMap.find(tgt);
+    if (tgtDomainPtr == blockMap.end()) {
+      auto i = blockMap.try_emplace(tgt, tgt).first;
+      ValueTranslator translator(inherited, i->second);
+      i->second.startDomain.populateFromPrev(translator, term);
+      addPending(tgt);
     } else {
       auto& tgtDomain = tgtDomainPtr->second;
       ValueTranslator translator(inherited, tgtDomain);
@@ -365,13 +342,11 @@ BlockInvariantFixpointQueue::addSuccessors(
   // Iterate through arguments
   for (auto p : blockArgs->argVec) {
     // Skip if arg is no longer used.
-    if (!p.first.scope)
+    if (!p.first)
       continue;
 
     // Lookup value to pass to block
-    mlir::Value v =
-      term.getScopeValue(p.first.scope, p.first.field,
-        builder, location, argValues);
+    mlir::Value v = term.cellValue(p.first, builder, location, argValues);
 
     // Add value to operand list.
     rng.push_back(v);
@@ -419,15 +394,18 @@ BlockInvariantFixpointQueue::addSuccessors(
 }
 */
 
-/// Here we utilize the CRTP `PassWrapper` utility class to provide some
-/// necessary utility hooks. This is only necessary for passes defined directly
-/// in C++. Passes defined declaratively use a cleaner mechanism for providing
-/// these utilities.
 class ScopeOptimization : public mlir::PassWrapper<ScopeOptimization,
                                            mlir::OperationPass<mlir::ModuleOp>> {
 private:
   void checkNoScopeOperands(mlir::Operation& op);
-  void analyzeBlock(mlir::Block* block, LocalsDomain& locals);
+
+  /**
+   * This function updates \p locals by applying the operations in the block.
+   *
+   * @param locals Invariants on block
+   * @param block Block to anlyze
+   */
+  void applyBlockOps(LocalsDomain& locals, mlir::Block* block);
   void optimizeBlock(BlockInvariantFixpointQueue& inv, mlir::Block* block, const std::vector<mlir::Value>& argValues, LocalsDomain& locals);
 public:
 
@@ -437,7 +415,7 @@ public:
     return "resolveScope";
   }
 
-  void analyzeFunction(mlir::FuncOp fun);
+  void optimizeFunction(mlir::FuncOp fun);
 
   void runOnOperation() override;
 };
@@ -461,29 +439,19 @@ void ScopeOptimization::checkNoScopeOperands(mlir::Operation& op) {
   }
 }
 
-void ScopeOptimization::analyzeBlock(mlir::Block* block, LocalsDomain& locals) {
+void ScopeOptimization::applyBlockOps(LocalsDomain& locals, mlir::Block* block) {
   for (auto opPtr = block->begin(); opPtr != block->end(); ++opPtr) {
-    auto opName = opPtr->getName().getIdentifier().str();
-    if (auto derivedOp = mlir::dyn_cast<mlir::python::ScopeInit>(opPtr)) {
-      locals.scope_init(derivedOp);
-    } else if (auto derivedOp = mlir::dyn_cast<mlir::python::ScopeExtend>(opPtr)) {
-      locals.scope_extend(derivedOp);
-    //} else if (auto derivedOp = mlir::dyn_cast<mlir::python::ScopeImport>(opPtr)) {
-    //  locals.scope_import(derivedOp);
-    } else if (auto op = mlir::dyn_cast<mlir::python::ScopeGet>(opPtr)) {
+    if (auto derivedOp = mlir::dyn_cast<mlir::python::CellAlloc>(opPtr)) {
+      locals.cellAlloc(derivedOp);
+    } else if (auto derivedOp = mlir::dyn_cast<mlir::python::CellStore>(opPtr)) {
+      locals.cellStore(derivedOp);
+    } else if (auto op = mlir::dyn_cast<mlir::python::CellLoad>(opPtr)) {
       // Do nothing
-    //} else if (auto op = mlir::dyn_cast<mlir::python::ScopeSet>(opPtr)) {
-    //  locals.scope_domain(op.scope()).setValue(op.name(), op.value());
-    } else if (mlir::isa<mlir::python::FunctionRef>(opPtr)) {
-      // Do nothing
-    } else {
-      // Check no operands are scope variables
-      checkNoScopeOperands(*opPtr);
     }
   }
 }
 
-using TermSubstFn = std::function<bool(
+using TermSubstFn = std::function<void(
   BlockInvariantFixpointQueue& inv,
   std::vector<mlir::Operation*>& toDelete,
   const std::vector<mlir::Value>& argValues,
@@ -491,14 +459,12 @@ using TermSubstFn = std::function<bool(
   mlir::Operation* opPtr)>;
 
 template<typename T>
-bool addUnaryOpArgs(BlockInvariantFixpointQueue& inv,
+void addUnaryOpArgs(BlockInvariantFixpointQueue& inv,
                   std::vector<mlir::Operation*>& toDelete,
                   const std::vector<mlir::Value>& argValues,
                   const LocalsDomain& term,
                   mlir::Operation* opPtr) {
-  if (!mlir::isa<T>(opPtr))
-    return false;
-
+  assert(mlir::isa<T>(opPtr));
   auto op = mlir::cast<T>(opPtr);
   auto builder(mlir::OpBuilder::atBlockEnd(opPtr->getBlock()));
 
@@ -511,17 +477,15 @@ bool addUnaryOpArgs(BlockInvariantFixpointQueue& inv,
   builder.create<T>(op.getLoc(), op.arg(),
     returnOps, exceptOps, op.returnDest(), op.exceptDest());
   opPtr->erase();
-  return true;
 }
 
 template<typename T>
-bool addBinOpArgs(BlockInvariantFixpointQueue& inv,
+void addBinOpArgs(BlockInvariantFixpointQueue& inv,
                   std::vector<mlir::Operation*>& toDelete,
                   const std::vector<mlir::Value>& argValues,
                   const LocalsDomain& term,
                   mlir::Operation* opPtr) {
-  if (!mlir::isa<T>(opPtr))
-    return false;
+  assert(mlir::isa<T>(opPtr));
 
   auto op = mlir::cast<T>(opPtr);
   auto builder(mlir::OpBuilder::atBlockEnd(opPtr->getBlock()));
@@ -535,11 +499,10 @@ bool addBinOpArgs(BlockInvariantFixpointQueue& inv,
   builder.create<T>(op.getLoc(), op.lhs(), op.rhs(),
     returnOps, exceptOps, op.returnDest(), op.exceptDest());
   opPtr->erase();
-  return true;
 }
 
 template<typename T>
-bool addOpArgs(BlockInvariantFixpointQueue& inv,
+void addOpArgs(BlockInvariantFixpointQueue& inv,
                std::vector<mlir::Operation*>& toDelete,
                const std::vector<mlir::Value>& argValues,
                   const LocalsDomain& term,
@@ -547,13 +510,13 @@ bool addOpArgs(BlockInvariantFixpointQueue& inv,
 
 
 template<>
-bool addOpArgs<mlir::cf::BranchOp>(BlockInvariantFixpointQueue& inv,
+void addOpArgs<mlir::cf::BranchOp>(BlockInvariantFixpointQueue& inv,
                   std::vector<mlir::Operation*>& toDelete,
                   const std::vector<mlir::Value>& argValues,
                   const LocalsDomain& term,
                   mlir::Operation* opPtr) {
   auto op = mlir::dyn_cast<mlir::cf::BranchOp>(opPtr);
-  if (!op) return false;
+  assert(op);
 
   auto builder(mlir::OpBuilder::atBlockEnd(opPtr->getBlock()));
 
@@ -562,18 +525,17 @@ bool addOpArgs<mlir::cf::BranchOp>(BlockInvariantFixpointQueue& inv,
 
   builder.create<mlir::cf::BranchOp>(op.getLoc(), destOps, op.getDest());
   opPtr->erase();
-  return true;
 }
 
 template<>
-bool addOpArgs<mlir::cf::CondBranchOp>(
+void addOpArgs<mlir::cf::CondBranchOp>(
         BlockInvariantFixpointQueue& inv,
         std::vector<mlir::Operation*>& toDelete,
         const std::vector<mlir::Value>& argValues,
         const LocalsDomain& term,
         mlir::Operation* opPtr) {
   auto op = mlir::dyn_cast<mlir::cf::CondBranchOp>(opPtr);
-  if (!op) return false;
+  assert (op);
 
   auto builder(mlir::OpBuilder::atBlockEnd(opPtr->getBlock()));
 
@@ -586,18 +548,17 @@ bool addOpArgs<mlir::cf::CondBranchOp>(
   builder.create<mlir::cf::CondBranchOp>(op.getLoc(), op.getCondition(), trueOps, falseOps,
     op.getTrueDest(), op.getFalseDest());
   opPtr->erase();
-  return true;
 }
 
 template<>
-bool addOpArgs<mlir::python::InvokeOp>(
+void addOpArgs<mlir::python::InvokeOp>(
         BlockInvariantFixpointQueue& inv,
         std::vector<mlir::Operation*>& toDelete,
         const std::vector<mlir::Value>& argValues,
         const LocalsDomain& term,
         mlir::Operation* opPtr) {
   auto op = mlir::dyn_cast<mlir::python::InvokeOp>(opPtr);
-  if (!op) return false;
+  assert(op);
 
   auto builder(mlir::OpBuilder::atBlockEnd(opPtr->getBlock()));
 
@@ -612,27 +573,49 @@ bool addOpArgs<mlir::python::InvokeOp>(
   builder.create<mlir::python::InvokeOp>(op.getLoc(), op.callee(), op.args(),
     keywords, returnOps, exceptOps, op.returnDest(), op.exceptDest());
   opPtr->erase();
-  return true;
 }
 
 template<>
-bool addOpArgs<mlir::python::ThrowOp>(
+void addOpArgs<mlir::python::ThrowOp>(
         BlockInvariantFixpointQueue& inv,
         std::vector<mlir::Operation*>& toDelete,
         const std::vector<mlir::Value>& argValues,
         const LocalsDomain& term,
         mlir::Operation* opPtr) {
-  return mlir::isa<mlir::python::ThrowOp>(opPtr);
+  assert(mlir::isa<mlir::python::ThrowOp>(opPtr));
 }
 
 template<>
-bool addOpArgs<mlir::func::ReturnOp>(
+void addOpArgs<mlir::func::ReturnOp>(
         BlockInvariantFixpointQueue& inv,
         std::vector<mlir::Operation*>& toDelete,
         const std::vector<mlir::Value>& argValues,
         const LocalsDomain& term,
         mlir::Operation* opPtr) {
-  return mlir::isa<mlir::func::ReturnOp>(opPtr);
+  assert(mlir::isa<mlir::func::ReturnOp>(opPtr));
+}
+
+template<>
+void addOpArgs<mlir::python::RetBranchOp>(
+        BlockInvariantFixpointQueue& inv,
+        std::vector<mlir::Operation*>& toDelete,
+        const std::vector<mlir::Value>& argValues,
+        const LocalsDomain& term,
+        mlir::Operation* opPtr) {
+  assert(mlir::isa<mlir::python::RetBranchOp>(opPtr));
+
+  auto op = mlir::cast<mlir::python::RetBranchOp>(opPtr);
+  auto builder(mlir::OpBuilder::atBlockEnd(opPtr->getBlock()));
+
+  std::vector<mlir::Value> returnOps;
+  inv.addSuccessors(returnOps, op.returnDest(), op.returnDestOperands(), builder, argValues, term);
+
+  std::vector<mlir::Value> exceptOps;
+  inv.addSuccessors(exceptOps, op.exceptDest(), op.exceptDestOperands(), builder, argValues, term);
+
+  builder.create<mlir::python::RetBranchOp>(op.getLoc(), op.value(),
+    returnOps, exceptOps, op.returnDest(), op.exceptDest());
+  opPtr->erase();
 }
 
 using TermSubstFnMap = llvm::DenseMap<llvm::StringRef, TermSubstFn>;
@@ -652,18 +635,18 @@ static void addOp(TermSubstFnMap& m) {
   m.try_emplace(T::getOperationName(), &addOpArgs<T>);
 }
 
+/**
+ * Create map from supported terminal function names to the code for optimizng them.
+ *
+ */
+llvm::DenseMap<llvm::StringRef, TermSubstFn> mkTermMap(void) {
 
-
-void ScopeOptimization::optimizeBlock(
-                      BlockInvariantFixpointQueue& inv,
-                      mlir::Block* block,
-                      const std::vector<mlir::Value>& argValues,
-                      LocalsDomain& locals) {
   llvm::DenseMap<llvm::StringRef, TermSubstFn> termFns;
   addOp<mlir::cf::BranchOp>(termFns);
   addOp<mlir::cf::CondBranchOp>(termFns);
   addOp<mlir::func::ReturnOp>(termFns);
   addOp<mlir::python::InvokeOp>(termFns);
+  addOp<mlir::python::RetBranchOp>(termFns);
   addOp<mlir::python::ThrowOp>(termFns);
   addUnaryOp<mlir::python::InvertOp>(termFns);
   addBinOp<mlir::python::AddOp>(termFns);
@@ -689,38 +672,35 @@ void ScopeOptimization::optimizeBlock(
   addBinOp<mlir::python::LtEOp>(termFns);
   addBinOp<mlir::python::NotEqOp>(termFns);
   addBinOp<mlir::python::NotInOp>(termFns);
+  return termFns;
+}
+
+llvm::DenseMap<llvm::StringRef, TermSubstFn> termFns = mkTermMap();
+
+void ScopeOptimization::optimizeBlock(
+                      BlockInvariantFixpointQueue& inv,
+                      mlir::Block* block,
+                      const std::vector<mlir::Value>& argValues,
+                      LocalsDomain& locals) {
 
   std::vector<mlir::Operation*> toDelete;
   bool doSucc = true;
   for (auto opPtr = block->begin(); opPtr != block->end(); ++opPtr) {
-    auto opName = opPtr->getName().getIdentifier().str();
-    if (auto derivedOp = mlir::dyn_cast<mlir::python::ScopeInit>(opPtr)) {
-      locals.scope_init(derivedOp);
-    } else if (auto derivedOp = mlir::dyn_cast<mlir::python::ScopeExtend>(opPtr)) {
-      locals.scope_extend(derivedOp);
-//    } else if (auto derivedOp = mlir::dyn_cast<mlir::python::ScopeImport>(opPtr)) {
-//      locals.scope_import(derivedOp);
-    } else if (auto op = mlir::dyn_cast<mlir::python::ScopeGet>(opPtr)) {
-      mlir::OpBuilder builder(op.getContext());
-      builder.setInsertionPoint(op);
-      if (auto v = locals.getScopeValue(op.scope(), op.name(), builder, op.getLoc(), argValues)) {
-        auto origResult = op.result();
-        origResult.replaceAllUsesWith(v);
+    if (auto derivedOp = mlir::dyn_cast<mlir::python::CellAlloc>(opPtr)) {
+      locals.cellAlloc(derivedOp);
+    } else if (auto derivedOp = mlir::dyn_cast<mlir::python::CellStore>(opPtr)) {
+      locals.cellStore(derivedOp);
+    } else if (auto op = mlir::dyn_cast<mlir::python::CellLoad>(opPtr)) {
+      if (auto v = locals.cellLoad(op, argValues)) {
+        op.result().replaceAllUsesWith(v);
         toDelete.push_back(op);
       }
-//    } else if (auto op = mlir::dyn_cast<mlir::python::ScopeSet>(opPtr)) {
-//      locals.scope_domain(op.scope()).setValue(op.name(), op.value());
-    } else if (auto op = mlir::dyn_cast<mlir::python::FunctionRef>(opPtr)) {
-      // FIXME: Collect invariants about closure passed into function.
     } else {
       auto i = termFns.find(opPtr->getName().getStringRef());
       if (i != termFns.end()) {
-        if (i->second(inv, toDelete, argValues, locals, &*opPtr)) {
-          doSucc = false;
-          break;
-        } else {
-          fatal_error("Adding arguments failed.");
-        }
+        i->second(inv, toDelete, argValues, locals, &*opPtr);
+        doSucc = false;
+        break;
       }
     }
   }
@@ -730,11 +710,14 @@ void ScopeOptimization::optimizeBlock(
     op->erase();
   }
   if (doSucc) {
-    fatal_error("Could not interpret arguments.");
+    std::string str;
+    llvm::raw_string_ostream o(str);
+    o << "Missing support for terminal instruction " << block->back() << ".";
+    fatal_error(str.c_str());
   }
 }
 
-void ScopeOptimization::analyzeFunction(mlir::FuncOp fun) {
+void ScopeOptimization::optimizeFunction(mlir::FuncOp fun) {
 
   mlir::DominanceInfo& domInfo = getAnalysis<mlir::DominanceInfo>();
   FunctionValueTransitionMap fvtm(fun, domInfo);
@@ -749,33 +732,34 @@ void ScopeOptimization::analyzeFunction(mlir::FuncOp fun) {
   while (inv.hasNext()) {
     auto& p = inv.nextBlock();
     mlir::Block* block = p.getBlock();
-    LocalsDomain blockScopes(p.startDomain);
-    analyzeBlock(block, blockScopes);
+    LocalsDomain locals(p.startDomain);
+    applyBlockOps(locals, block);
     // Update all successor blocks.
-    inv.updateSuccessors(fvtm, block, blockScopes);
+    inv.updateSuccessors(fvtm, block, locals);
   }
 
   auto ctx = &this->getContext();
 
   // Run optimization passes
-  auto pythonType = mlir::python::ValueType::get(ctx);
+  auto pythonValueType = mlir::python::ValueType::get(ctx);
   mlir::Builder builder(fun.getContext());
   for (auto& p : inv.blockMap) {
     auto& argInfo = p.second;
     auto block = argInfo.getBlock();
-    // Add arguments for blocks
+
+    // Add value arguments for blocks identified by cells.
     std::vector<mlir::Value> argVec;
     for (auto p : argInfo.argVec) {
-      if (p.first.scope) {
-        auto arg = block->addArgument(pythonType, builder.getUnknownLoc());
+      if (p.first) {
+        auto arg = block->addArgument(pythonValueType, builder.getUnknownLoc());
         argVec.push_back(arg);
       } else {
         argVec.push_back(mlir::Value());
       }
     }
     // Optimize operations in block
-    LocalsDomain blockScopes(argInfo.startDomain);
-    optimizeBlock(inv, block, argVec, blockScopes);
+    LocalsDomain blockLocals(argInfo.startDomain);
+    optimizeBlock(inv, block, argVec, blockLocals);
   }
 }
 
@@ -788,7 +772,7 @@ void ScopeOptimization::runOnOperation() {
     for (auto iOp = iBlock->begin(); iOp != iBlock->end(); ++iOp) {
       auto& op = *iOp;
       if (auto funOp = mlir::dyn_cast<mlir::FuncOp>(op)) {
-        analyzeFunction(funOp);
+        optimizeFunction(funOp);
       }
     }
   }
@@ -797,21 +781,33 @@ void ScopeOptimization::runOnOperation() {
 }
 
 int main(int argc, const char** argv) {
-  if (argc != 2) {
-    fprintf(stderr, "Please provide the path to read.\n");
-    return -1;
+  const char* path = 0;
+  bool verify = false;
+
+  for (int i = 1; i != argc; ++i) {
+    if (strcmp(argv[i], "--verify") == 0) {
+      verify = true;
+    } else {
+      if (path != 0) {
+        fprintf(stderr, "Please specify only a single file to read.");
+        exit(-1);
+      }
+      path = argv[i];
+    }
   }
-  const char* path = argv[1];
 
+  if (!path) {
+    fprintf(stderr, "Please provide the path to read.\n");
+    exit(-1);
+  }
 
-//  context.allowUnregisteredDialects();
   mlir::DialectRegistry registry;
   registry.insert<mlir::python::PythonDialect>();
 
-  mlir::MLIRContext inputContext;
-  initContext(inputContext, registry);
+  mlir::MLIRContext ctx;
+  initContext(ctx, registry);
   mlir::Block block;
-  mlir::LogicalResult r = mlir::parseSourceFile(path, &block, &inputContext);
+  mlir::LogicalResult r = mlir::parseSourceFile(path, &block, &ctx);
   if (r.failed()) {
     fprintf(stderr, "Failed to parse mlir file file.\n");
     return -1;
@@ -825,7 +821,8 @@ int main(int argc, const char** argv) {
 
   // Create a top-level `PassManager` class. If an operation type is not
   // explicitly specific, the default is the builtin `module` operation.
-  mlir::PassManager pm(&inputContext);
+  mlir::PassManager pm(&ctx);
+  pm.enableVerifier(verify);
 //  auto &nestedFunctionPM = pm.nest<mlir::ModuleOp>();
 //  nestedFunctionPM.addPass(std::make_unique<ScopeOptimization>());
   pm.addPass(std::make_unique<ScopeOptimization>());
@@ -838,7 +835,6 @@ int main(int argc, const char** argv) {
 
   block.begin()->print(llvm::outs());
   llvm::outs() << "\n";
-
 
   return 0;
 }

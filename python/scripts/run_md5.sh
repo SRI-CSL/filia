@@ -7,7 +7,7 @@ cmake --build build/debug
 MLIRFILE=example/md5.mlir
 
 echo "Generating $MLIRFILE"
-PYTHONPATH="build/debug/python_packages/python" python genmlir/genmlir.py example/md5_example.py > $MLIRFILE
+PYTHONPATH="build/debug/python_packages/python" python py2mlir/py2mlir.py example/md5_example.py > $MLIRFILE
 
 echo "Running python-opt"
 OPTMLIRFILE=example/md5_opt.mlir

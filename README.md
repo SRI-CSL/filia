@@ -1,92 +1,29 @@
-# Cross-language Static Analysis
+# LMC
 
-This document describes approaches to developing static
-analysis tools for scripting languages.  The goal is to
-develop a framework suitable for analyzing code written in
-multiple languages.
+LMC aims to provide cross-language program verification and bug finding
+capabilities using the MLIR compiler infrastructure.  MLIR is a general
+highly-extensible program intermediate representation suited for representing
+code writen in a variety of languages.
 
-## Proposed Workflow
-
-1. Generate JSON AST of Python code using Python AST.
-
-2. Define an MLIR dialect with the Python language primitives.  This will
-need to be defined in Ocaml for integration with Pyre and in tablegen for
-use with the MLIR C++ library.
-
-3. Write OCaml code to take the Pyre-generated Python AST and
-emit MLIR in the textual format.
-
-4. Explore building static analysis of MLIR to typecheck Python code.
-
-Repeat this with Javascript using the OCaML
-[Flow parser](https://opam.ocaml.org/packages/flow_parser/)
-also developed by Facebook.  This will allow reusing the MLIR
-generation or FFI code.
-
-## Research Questions
-
-What should the initial goal be?  Gradual typing?
-
-How much commonality is there between the Python and Javascript
-MLIR dialects?
-
-## Market Questions
-
-Who are other competitors in the multi-language analysis market?
-
-* [Sonartype Qube](https://www.sonarqube.org/features/multi-languages/) is
-  a commercial static analysis offering.
-
-* [Sonatype Lift](https://www.sonatype.com/products/sonatype-lift) is a
-  cloud-native, collaborative, code analysis platform built for developers.
-
-Are there gradual typing tools that use a language-independent IR?
-
-### Python Tools
-
-* [Pyre](https://pyre-check.org/)
-
-Pyre include things that may be relevant:
-
-* [Typeshed](https://github.com/python/typeshed)
-
-Typeshed contains external type annotations for the Python standard library and Python builtins, as well as third party packages as contributed by people external to those projects.
-
-### Javascript Tools
-
-* [Flow](https://flow.org/)
-
-Flow is a static type checker for JavaScript.
-
-* [Typescript](https://www.typescriptlang.org/)
-
-TypeScript is a strongly typed programming language that builds on JavaScript, giving you better tooling at any scale.
-Developed by Microsoft.
-
-### Ruby Tools
-
-* [Sorbet](https://sorbet.org/)
-
-A gradual typechecker for Ruby.  Developed by Stripe.
-
-## Engineering Questions
-
-Should we write bindings for MLIR in a language better suited for
-transformations/analysis than C++?
-
-What existing capabilities within MLIR should we reuse?
-
-How far can we actually get on this vision given the project
-budget?
-
-What existing dialects should we use for encoding Python/Javascript?
+LMC currently includes: (1) a Python to MLIR translation tool called py2mlir; (2)
+a Javascript to MLIR translator called js2mlir; (3) a tool for running optimization
+passes on Python called `python-opt`; and (4) a tool that runs standard MLIR optimization
+passes that supports the Python and Javascript dialects called `script-opt`.
 
 
-## Risks
+## Building
 
-The overhead of translating into a language-independent IR may lead
-to slow performance.
+This setup assumes that you have built LLVM and MLIR in `$BUILD_DIR` and installed them to `$PREFIX`. To build and launch the tests, run
 
-* What are good benchmarks to measure the overhead associated with translating into MLIR?
+```sh
+cmake -S . -B build/debug -DMLIR_DIR=$PREFIX/lib/cmake/mlir
+cmake --build build/debug --target check-python
+```
 
+To build the documentation from the TableGen description of the dialect operations, run
 
+```sh
+cmake --build build/debug --target mlir-doc
+```
+
+**Note**: Make sure to pass `-DLLVM_INSTALL_UTILS=ON` when building LLVM with CMake in order to install `FileCheck` to the chosen installation prefix.

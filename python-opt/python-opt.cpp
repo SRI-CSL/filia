@@ -394,7 +394,7 @@ BlockInvariantFixpointQueue::addSuccessors(
 }
 */
 
-class ScopeOptimization : public mlir::PassWrapper<ScopeOptimization,
+class PythonLoadStoreOptimization : public mlir::PassWrapper<PythonLoadStoreOptimization,
                                            mlir::OperationPass<mlir::ModuleOp>> {
 private:
   void checkNoScopeOperands(mlir::Operation& op);
@@ -421,7 +421,7 @@ public:
 };
 
 // Check no operands are scope variables
-void ScopeOptimization::checkNoScopeOperands(mlir::Operation& op) {
+void PythonLoadStoreOptimization::checkNoScopeOperands(mlir::Operation& op) {
   const auto& operands = op.getOperands();
   auto scopeTypeId = mlir::python::ScopeType::getTypeID();
 
@@ -439,7 +439,7 @@ void ScopeOptimization::checkNoScopeOperands(mlir::Operation& op) {
   }
 }
 
-void ScopeOptimization::applyBlockOps(LocalsDomain& locals, mlir::Block* block) {
+void PythonLoadStoreOptimization::applyBlockOps(LocalsDomain& locals, mlir::Block* block) {
   for (auto opPtr = block->begin(); opPtr != block->end(); ++opPtr) {
     if (auto derivedOp = mlir::dyn_cast<mlir::python::CellAlloc>(opPtr)) {
       locals.cellAlloc(derivedOp);
@@ -677,7 +677,7 @@ llvm::DenseMap<llvm::StringRef, TermSubstFn> mkTermMap(void) {
 
 llvm::DenseMap<llvm::StringRef, TermSubstFn> termFns = mkTermMap();
 
-void ScopeOptimization::optimizeBlock(
+void PythonLoadStoreOptimization::optimizeBlock(
                       BlockInvariantFixpointQueue& inv,
                       mlir::Block* block,
                       const std::vector<mlir::Value>& argValues,
@@ -717,7 +717,7 @@ void ScopeOptimization::optimizeBlock(
   }
 }
 
-void ScopeOptimization::optimizeFunction(mlir::FuncOp fun) {
+void PythonLoadStoreOptimization::optimizeFunction(mlir::FuncOp fun) {
 
   mlir::DominanceInfo& domInfo = getAnalysis<mlir::DominanceInfo>();
   FunctionValueTransitionMap fvtm(fun, domInfo);
@@ -764,7 +764,7 @@ void ScopeOptimization::optimizeFunction(mlir::FuncOp fun) {
 }
 
 
-void ScopeOptimization::runOnOperation() {
+void PythonLoadStoreOptimization::runOnOperation() {
   // Get the current func::FuncOp operation being operated on.
   mlir::ModuleOp m = getOperation();
   auto& r = m.body();
@@ -780,13 +780,37 @@ void ScopeOptimization::runOnOperation() {
 
 }
 
-int main(int argc, const char** argv) {
+struct Args {
+  Args(int argc, const char** arg);
+
+
+  // Path of file to read from
+  const char* path;
+  // Flag indicates we should verify output
+  bool verify;
+  // Include debug information when printing
+  bool printDebug;
+  // Use generic represntation when printing
+  bool printGeneric;
+};
+
+
+Args::Args(int argc, const char** arg) {
+  path = 0;
+  verify = false;
+  printDebug = false;
+  printGeneric = false;
+
   const char* path = 0;
   bool verify = false;
 
   for (int i = 1; i != argc; ++i) {
     if (strcmp(argv[i], "--verify") == 0) {
       verify = true;
+    } else if (strcmp(argv[i], "--print-debug")) {
+      printDebug = true;
+    } else if (strcmp(argv[i], "--print-generic")) {
+      printGeneric = true;
     } else {
       if (path != 0) {
         fprintf(stderr, "Please specify only a single file to read.");
@@ -800,6 +824,10 @@ int main(int argc, const char** argv) {
     fprintf(stderr, "Please provide the path to read.\n");
     exit(-1);
   }
+}
+
+int main(int argc, const char** argv) {
+  Args args(argc, argv);
 
   mlir::DialectRegistry registry;
   registry.insert<mlir::python::PythonDialect>();
@@ -807,7 +835,7 @@ int main(int argc, const char** argv) {
   mlir::MLIRContext ctx;
   initContext(ctx, registry);
   mlir::Block block;
-  mlir::LogicalResult r = mlir::parseSourceFile(path, &block, &ctx);
+  mlir::LogicalResult r = mlir::parseSourceFile(args.path, &block, &ctx);
   if (r.failed()) {
     fprintf(stderr, "Failed to parse mlir file file.\n");
     return -1;
@@ -817,15 +845,15 @@ int main(int argc, const char** argv) {
     return -1;
   }
 
-  mlir::PassRegistration<ScopeOptimization>();
+  mlir::PassRegistration<PythonLoadStoreOptimization>();
 
   // Create a top-level `PassManager` class. If an operation type is not
   // explicitly specific, the default is the builtin `module` operation.
   mlir::PassManager pm(&ctx);
-  pm.enableVerifier(verify);
+  pm.enableVerifier(args.verify);
 //  auto &nestedFunctionPM = pm.nest<mlir::ModuleOp>();
 //  nestedFunctionPM.addPass(std::make_unique<ScopeOptimization>());
-  pm.addPass(std::make_unique<ScopeOptimization>());
+  pm.addPass(std::make_unique<PythonLoadStoreOptimization>());
 //  pm.addPass()
 
   if (failed(pm.run(&*block.begin()))) {
@@ -833,7 +861,13 @@ int main(int argc, const char** argv) {
     exit(-1);
   }
 
-  block.begin()->print(llvm::outs());
+  OpPrintingFlags flags;
+  if (args.printDebug)
+    flags.enableDebugInfo();
+  if (args.printGeneric)
+    flags.printGenericOpForm();
+
+  block.begin()->print(llvm::outs(), mlir::printGenericOpForm());
   llvm::outs() << "\n";
 
   return 0;

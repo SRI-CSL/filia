@@ -1,44 +1,61 @@
-cmake_minimum_required(VERSION 3.13.4)
-project(python-dialect LANGUAGES CXX C)
+include(AddMLIRPython)
 
-set(CMAKE_BUILD_WITH_INSTALL_NAME_DIR ON)
+# Specifies that all MLIR packages are co-located under the `mlir_python`
+# top level package (the API has been embedded in a relocatable way).
+# TODO: Add an upstream cmake param for this vs having a global here.
+add_compile_definitions("MLIR_PYTHON_PACKAGE_PREFIX=mlir_python.")
 
-set(CMAKE_CXX_STANDARD 14 CACHE STRING "C++ standard to conform to")
 
-find_package(MLIR REQUIRED CONFIG)
+################################################################################
+# Sources
+################################################################################
 
-message(STATUS "Using MLIRConfig.cmake in: ${MLIR_DIR}")
-message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
+declare_mlir_python_sources(PythonDialectSources)
 
-set(LLVM_RUNTIME_OUTPUT_INTDIR ${CMAKE_BINARY_DIR}/bin)
-set(LLVM_LIBRARY_OUTPUT_INTDIR ${CMAKE_BINARY_DIR}/lib)
-set(MLIR_BINARY_DIR ${CMAKE_BINARY_DIR})
+declare_mlir_dialect_python_bindings(
+  ADD_TO_PARENT PythonDialectSources
+  ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/mlir_python"
+  TD_FILE dialects/PythonOps.td
+  SOURCES
+    dialects/python.py
+    dialects/_python_ops_ext.py
+    _mlir_libs/_mlir/dialects/python.pyi
 
-list(APPEND CMAKE_MODULE_PATH "${MLIR_CMAKE_DIR}")
-list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
-include(TableGen)
-include(AddLLVM)
-include(AddMLIR)
-include(HandleLLVMOptions)
+  DIALECT_NAME python)
 
-if(MLIR_ENABLE_BINDINGS_PYTHON)
-  include(MLIRDetectPythonEnv)
-  mlir_configure_python_dev_packages()
-endif()
+declare_mlir_python_extension(PythonPythonSources.Extension
+  MODULE_NAME _pythonDialects
+  ADD_TO_PARENT PythonDialectSources
+  SOURCES
+    PythonExtension.cpp
+  EMBED_CAPI_LINK_LIBS
+    PythonDialectCAPI
+)
 
-include_directories(${LLVM_INCLUDE_DIRS})
-include_directories(${MLIR_INCLUDE_DIRS})
-include_directories(${PROJECT_SOURCE_DIR}/include)
-include_directories(${PROJECT_BINARY_DIR}/include)
-link_directories(${LLVM_BUILD_LIBRARY_DIR})
-add_definitions(${LLVM_DEFINITIONS})
+################################################################################
+# Common CAPI
+################################################################################
 
-add_subdirectory(include)
-add_subdirectory(lib)
-if(MLIR_ENABLE_BINDINGS_PYTHON)
-  message(STATUS "Enabling Python API")
-  add_subdirectory(python)
-endif()
-add_subdirectory(test)
-add_subdirectory(python-opt)
-add_subdirectory(script-opt)
+add_mlir_python_common_capi_library(PythonPythonCAPI
+  INSTALL_COMPONENT PythonDialectModules
+  INSTALL_DESTINATION python_packages/python/mlir_python/_mlir_libs
+  OUTPUT_DIRECTORY "${MLIR_BINARY_DIR}/python_packages/python/mlir_python/_mlir_libs"
+  RELATIVE_INSTALL_ROOT "../../../.."
+  DECLARED_SOURCES
+    PythonDialectSources
+    MLIRPythonSources.Core
+)
+
+################################################################################
+# Instantiation of all Python modules
+################################################################################
+
+add_mlir_python_modules(PythonDialectModules
+  ROOT_PREFIX "${MLIR_BINARY_DIR}/python_packages/python/mlir_python"
+  INSTALL_PREFIX "python_packages/python/mlir_python"
+  DECLARED_SOURCES
+    PythonDialectSources
+    MLIRPythonSources
+  COMMON_CAPI_LINK_LIBS
+    PythonPythonCAPI
+  )

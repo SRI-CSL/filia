@@ -1,3 +1,4 @@
-/.python-version
-/.vscode
-.DS_Store
+/.devcontainer/
+/.vscode/
+/build/
+/.DS_Store

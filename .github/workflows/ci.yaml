@@ -1,0 +1,55 @@
+name: CI
+
+on: [push]
+jobs:
+  # This task builds the dev image used to build reopt.
+  build:
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: ${{ matrix.shell || 'sh' }}
+    strategy:
+      matrix:
+        include:
+        - name: Ubuntu
+          os: ubuntu-22.04
+      # complete all jobs
+      fail-fast: false
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+      with:
+        submodules: true
+    - name: Install common dependencies
+      run: |
+        pip install numpy pybind11
+    - name: Get LLVM COMMIT
+      run: |
+        echo "llvm_commit=`git rev-parse HEAD:deps/llvm-project`" >> $GITHUB_ENV
+    - name: Cache LLVM
+      uses: actions/cache@v2
+      id: cache-llvm
+      with:
+        path: deps/llvm-install
+        key: llvm-${{matrix.name}}-${{env.llvm_commit}}
+    - name: Cache LLVM build
+      uses: actions/cache@v2
+      with:
+        path: deps/llvm-build
+        key: llvm-build-${{matrix.name}}
+      if: steps.cache-llvm.outputs.cache-hit != 'true'
+    - name: Install LLVM dependencies
+      run: |
+        sudo DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
+          ninja-build lld
+      if: steps.cache-llvm.outputs.cache-hit != 'true'
+    - name: Configure LLVM
+      run: ./deps/configure-llvm.sh
+      if: steps.cache-llvm.outputs.cache-hit != 'true'
+    - name: Build LLVM
+      run: cmake --build deps/llvm-build --target install
+      if: steps.cache-llvm.outputs.cache-hit != 'true'
+    - name: Configure
+      run: cmake -S . -B build/debug -DCMAKE_BUILD_TYPE=Debug -DMLIR_DIR=deps/llvm-install/lib/cmake/mlir
+    - name: Build
+      run: cmake --build build/debug

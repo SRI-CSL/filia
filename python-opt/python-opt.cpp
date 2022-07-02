@@ -397,8 +397,6 @@ BlockInvariantFixpointQueue::addSuccessors(
 class PythonLoadStoreOptimization : public mlir::PassWrapper<PythonLoadStoreOptimization,
                                            mlir::OperationPass<mlir::ModuleOp>> {
 private:
-  void checkNoScopeOperands(mlir::Operation& op);
-
   /**
    * This function updates \p locals by applying the operations in the block.
    *
@@ -419,25 +417,6 @@ public:
 
   void runOnOperation() override;
 };
-
-// Check no operands are scope variables
-void PythonLoadStoreOptimization::checkNoScopeOperands(mlir::Operation& op) {
-  const auto& operands = op.getOperands();
-  auto scopeTypeId = mlir::python::ScopeType::getTypeID();
-
-  for (auto i = operands.begin(); i != operands.end(); ++i) {
-    mlir::Value v = *i;
-    // Scopes must use known operations
-
-    if (v.getType().getTypeID() == scopeTypeId) {
-      llvm::errs() << "Unsupported operand: ";
-      op.getName().print(llvm::errs());
-      llvm::errs() << "\n";
-      fatal_error("Scope operand!");
-//      return signalPassFailure();
-    }
-  }
-}
 
 void PythonLoadStoreOptimization::applyBlockOps(LocalsDomain& locals, mlir::Block* block) {
   for (auto opPtr = block->begin(); opPtr != block->end(); ++opPtr) {
@@ -781,8 +760,7 @@ void PythonLoadStoreOptimization::runOnOperation() {
 }
 
 struct Args {
-  Args(int argc, const char** arg);
-
+  Args(int argc, const char** argv);
 
   // Path of file to read from
   const char* path;
@@ -795,7 +773,7 @@ struct Args {
 };
 
 
-Args::Args(int argc, const char** arg) {
+Args::Args(int argc, const char** argv) {
   path = 0;
   verify = false;
   printDebug = false;
@@ -861,13 +839,13 @@ int main(int argc, const char** argv) {
     exit(-1);
   }
 
-  OpPrintingFlags flags;
+  mlir::OpPrintingFlags flags;
   if (args.printDebug)
     flags.enableDebugInfo();
   if (args.printGeneric)
     flags.printGenericOpForm();
 
-  block.begin()->print(llvm::outs(), mlir::printGenericOpForm());
+  block.begin()->print(llvm::outs(), flags);
   llvm::outs() << "\n";
 
   return 0;

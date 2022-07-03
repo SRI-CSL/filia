@@ -779,9 +779,6 @@ Args::Args(int argc, const char** argv) {
   printDebug = false;
   printGeneric = false;
 
-  const char* path = 0;
-  bool verify = false;
-
   for (int i = 1; i != argc; ++i) {
     if (strcmp(argv[i], "--verify") == 0) {
       verify = true;

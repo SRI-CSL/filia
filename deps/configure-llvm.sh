@@ -11,4 +11,3 @@ cmake -G Ninja \
     -DLLVM_INSTALL_UTILS=ON \
     -DLLVM_TARGETS_TO_BUILD="X86" \
     ${EXTRA_ARGS:-}
-

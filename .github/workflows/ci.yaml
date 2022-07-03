@@ -2,7 +2,6 @@ name: CI
 
 on: [push]
 jobs:
-  # This task builds the dev image used to build reopt.
   build:
     runs-on: ${{ matrix.os }}
     defaults:
@@ -13,11 +12,13 @@ jobs:
         include:
         - name: Ubuntu
           os: ubuntu-22.04
+          llvm-args: -DLLVM_USE_LINKER=lld
         - name: MacOS
           os: macos-11
         - name: Windows
           os: windows-2022
           shell: msys2 {0}
+          llvm-args: -DPython_EXECUTABLE=/mingw64/bin/python3.exe -DPython3_NumPy_INCLUDE_DIRS=/mingw64/include/python3.10/numpy/
       # complete all jobs
       fail-fast: false
     steps:
@@ -25,9 +26,27 @@ jobs:
       uses: actions/checkout@v3
       with:
         submodules: true
-    - name: Install common dependencies
+    - uses: msys2/setup-msys2@v2
+      with:
+        install: >-
+          mingw-w64-x86_64-clang
+          mingw-w64-x86_64-cmake
+          mingw-w64-x86_64-ninja
+          mingw-w64-x86_64-python
+          mingw-w64-x86_64-python-numpy
+          mingw-w64-x86_64-python-pip
+      if: matrix.os == 'windows-2022'
+    - name: Setup python
+      id: python
+      uses: actions/setup-python@v4
+      with:
+        python-version-file: '.python-version'
+        cache: 'pip'
+      if: matrix.os != 'windows-2022'
+    - name: Setup python environment
       run: |
-        pip install numpy pybind11
+        echo $PATH
+        python -m pip install -r deps/llvm-project/mlir/python/requirements.txt
     - name: Get LLVM COMMIT
       run: |
         echo "llvm_commit=`git rev-parse HEAD:deps/llvm-project`" >> $GITHUB_ENV
@@ -36,27 +55,31 @@ jobs:
       id: cache-llvm
       with:
         path: deps/llvm-install
-        key: llvm-${{matrix.name}}-${{env.llvm_commit}}
+        key: llvm-2-${{matrix.name}}-${{env.llvm_commit}}
     - name: Cache LLVM build
       uses: actions/cache@v2
       with:
         path: deps/llvm-build
         key: llvm-build-${{matrix.name}}
       if: steps.cache-llvm.outputs.cache-hit != 'true'
-    - name: Install LLVM dependencies
+    - name: Install Ubuntu LLVM dependencies
       run: |
         sudo DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
           ninja-build lld
       if: steps.cache-llvm.outputs.cache-hit != 'true' && matrix.os == 'ubuntu-22.04'
+    - name: Install MacOS LLVM dependencies
+      run: |
+        brew install ninja
+      if: steps.cache-llvm.outputs.cache-hit != 'true' && matrix.os == 'macos-11'
     - name: Configure LLVM
-      run:
-        EXTRA_ARGS="-DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DLLVM_USE_LINKER=lld" \
-          ./deps/configure-llvm.sh
+      run: |
+        ls -l ./deps
+        EXTRA_ARGS="-DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ ${{matrix.llvm-args}}" ./deps/configure-llvm.sh
       if: steps.cache-llvm.outputs.cache-hit != 'true'
     - name: Build LLVM
       run: cmake --build deps/llvm-build --target install
       if: steps.cache-llvm.outputs.cache-hit != 'true'
-    - name: Configure
-      run: cmake -S . -B build/debug -DCMAKE_BUILD_TYPE=Debug -DMLIR_DIR=deps/llvm-install/lib/cmake/mlir
-    - name: Build
-      run: cmake --build build/debug
+#    - name: Configure
+#      run: cmake -S . -B build/debug -DCMAKE_BUILD_TYPE=Debug -DMLIR_DIR=deps/llvm-install/lib/cmake/mlir
+#    - name: Build
+#      run: cmake --build build/debug

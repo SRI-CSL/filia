@@ -13,6 +13,11 @@ jobs:
         include:
         - name: Ubuntu
           os: ubuntu-22.04
+        - name: MacOS
+          os: macos-11
+        - name: Windows
+          os: windows-2022
+          shell: msys2 {0}
       # complete all jobs
       fail-fast: false
     steps:
@@ -42,9 +47,11 @@ jobs:
       run: |
         sudo DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
           ninja-build lld
-      if: steps.cache-llvm.outputs.cache-hit != 'true'
+      if: steps.cache-llvm.outputs.cache-hit != 'true' && matrix.os == 'ubuntu-22.04'
     - name: Configure LLVM
-      run: ./deps/configure-llvm.sh
+      run:
+        EXTRA_ARGS="-DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DLLVM_USE_LINKER=lld" \
+          ./deps/configure-llvm.sh
       if: steps.cache-llvm.outputs.cache-hit != 'true'
     - name: Build LLVM
       run: cmake --build deps/llvm-build --target install

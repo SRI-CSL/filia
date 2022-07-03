@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 cmake -G Ninja \
     -S deps/llvm-project/llvm \
@@ -10,6 +10,5 @@ cmake -G Ninja \
     -DLLVM_BUILD_TOOLS=OFF \
     -DLLVM_INSTALL_UTILS=ON \
     -DLLVM_TARGETS_TO_BUILD="X86" \
-    -DCMAKE_C_COMPILER=clang \
-    -DCMAKE_CXX_COMPILER=clang++ \
-    -DLLVM_USE_LINKER=lld
+    ${EXTRA_ARGS:-}
+

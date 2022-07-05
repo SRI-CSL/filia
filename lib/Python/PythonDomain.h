@@ -14,13 +14,6 @@
 #include "Python/PythonDialect.h"
 #include "Python/PythonOps.h"
 
-inline
-void fatal_error(const char* message) {
-  fprintf(stderr, "%s\n", message);
-  *((int*) 0) = 1;
-//  exit(-1);
-}
-
 class ValueTranslator;
 
 /**
@@ -108,7 +101,7 @@ public:
     case ARGUMENT:
       {
         auto r = argValues[argument];
-        if (!r) fatal_error("Unassigned argValue");
+        if (!r) llvm::report_fatal_error("Unassigned argValue");
         return r;
       }
     }
@@ -130,150 +123,6 @@ bool operator==(const ValueDomain& x, const ValueDomain& y) {
     return x.argument == y.argument;
   }
 }
-
-/*
-class CellDomain {
-private:
-  ValueDomain map;
-
-  void addBinding(const ValueDomain& v) {
-    map.insert(std::make_pair(v));
-  }
-
-  void addBuiltin(mlir::python::BuiltinAttr a, llvm::StringRef name) {
-    llvm::StringRef val(mlir::python::stringifyEnum(a));
-    addBinding(name, ValueDomain::make_builtin(val));
-  }
-
-  void addBuiltin(mlir::python::BuiltinAttr a) {
-    llvm::StringRef name(mlir::python::stringifyEnum(a));
-    addBinding(name, ValueDomain::make_builtin(name));
-  }
-
-public:
-
-  explicit ScopeDomain() {
-  }
-
-  /// initializeFromPrev initializes a scope domain for a target block using information from the scope
-  /// domain in a previous block.  This may need to requst the translator generate block
-  /// arguments to pass values from the source to the target.
-  ///
-  /// @param translator Provides functionality for mapping values into target block
-  /// @param srcDomain Source domain to pull constraints from.
-  /// @param tgtValue Value denoting scope in target block.
-  ///
-  void initializeFromPrev(ValueTranslator& translator, const ScopeDomain& srcDomain, const mlir::Value& tgtValue);
-
-  ///
-  /// mergeFromPrev updates scope constraints to reflect only constraints in both domains.
-  ///
-  /// @param translator Provides functionality for mapping values into target block
-  /// @param srcDomain Source domain to pull constraints from.
-  /// @param tgtValue Value denoting scope in target block.
-  ///
-  bool mergeFromPrev(ValueTranslator& translator, const ScopeDomain& srcDomain, const mlir::Value& tgtValue);
-
-  ///
-  /// Add mappings from builtin names to the corresponding builtin function.
-  ///
-  void addBuiltins();
-
-  void import(const llvm::StringRef& module, const llvm::StringRef& asName) {
-    addBinding(asName, ValueDomain::make_module(module));
-  }
-
-  void setValue(const llvm::StringRef& name, mlir::Value value) {
-    addBinding(name, ValueDomain::make_value(value));
-  }
-
-  ValueDomain* getValue(const llvm::StringRef& name) {
-    auto i = map.find(name);
-    return (i != map.end()) ? &i->second : 0;
-  }
-
-  const ValueDomain* getValue(const llvm::StringRef& name) const {
-    auto i = map.find(name);
-    return (i != map.end()) ? &i->second : 0;
-  }
-
-  static ScopeDomain extend(const ScopeDomain& d) {
-    return d;
-  }
-};
-
-///
-/// This is the abstract domain that we associate with a scope.
-///
-class ScopeDomain {
-private:
-  llvm::DenseMap<llvm::StringRef, ValueDomain> map;
-
-  void addBinding(llvm::StringRef name, const ValueDomain& v) {
-    map.insert(std::make_pair(name, v));
-  }
-
-  void addBuiltin(mlir::python::BuiltinAttr a, llvm::StringRef name) {
-    llvm::StringRef val(mlir::python::stringifyEnum(a));
-    addBinding(name, ValueDomain::make_builtin(val));
-  }
-
-  void addBuiltin(mlir::python::BuiltinAttr a) {
-    llvm::StringRef name(mlir::python::stringifyEnum(a));
-    addBinding(name, ValueDomain::make_builtin(name));
-  }
-public:
-
-  explicit ScopeDomain() {
-  }
-
-  ///
-  /// initializeFromPrev initializes a scope domain for a target block using information from the scope
-  /// domain in a previous block.  This may need to requst the translator generate block
-  /// arguments to pass values from the source to the target.
-  ///
-  /// @param translator Provides functionality for mapping values into target block
-  /// @param srcDomain Source domain to pull constraints from.
-  /// @param tgtValue Value denoting scope in target block.
-  void initializeFromPrev(ValueTranslator& translator, const ScopeDomain& srcDomain, const mlir::Value& tgtValue);
-
-  ///
-  /// mergeFromPrev updates scope constraints to reflect only constraints in both domains.
-  ///
-  /// @param translator Provides functionality for mapping values into target block
-  /// @param srcDomain Source domain to pull constraints from.
-  /// @param tgtValue Value denoting scope in target block.
-  ///
-  bool mergeFromPrev(ValueTranslator& translator, const ScopeDomain& srcDomain, const mlir::Value& tgtValue);
-
-  ///
-  /// Add mappings from builtin names to the corresponding builtin function.
-  ///
-  void addBuiltins();
-
-  void import(const llvm::StringRef& module, const llvm::StringRef& asName) {
-    addBinding(asName, ValueDomain::make_module(module));
-  }
-
-  void setValue(const llvm::StringRef& name, mlir::Value value) {
-    addBinding(name, ValueDomain::make_value(value));
-  }
-
-  ValueDomain* getValue(const llvm::StringRef& name) {
-    auto i = map.find(name);
-    return (i != map.end()) ? &i->second : 0;
-  }
-
-  const ValueDomain* getValue(const llvm::StringRef& name) const {
-    auto i = map.find(name);
-    return (i != map.end()) ? &i->second : 0;
-  }
-
-  static ScopeDomain extend(const ScopeDomain& d) {
-    return d;
-  }
-};
-*/
 
 /// The contents of a cell.
 class CellDomain {
@@ -348,7 +197,7 @@ class LocalsDomain {
 
 public:
   LocalsDomain(mlir::Block* block) : block(block) {
-      if (!block) fatal_error("Locals domain given null block.");
+      if (!block) llvm::report_fatal_error("Locals domain given null block.");
   }
   LocalsDomain(const LocalsDomain&) = default;
   LocalsDomain(LocalsDomain&&) = default;
@@ -397,7 +246,7 @@ public:
       o << ": Have not seen cell ";
       cell.printAsOperand(o, state);
       o << ".";
-      fatal_error(str.c_str());
+      llvm::report_fatal_error(str.c_str());
     }
     return i->second;
   }
@@ -413,7 +262,7 @@ public:
       o << ": Have not seen cell ";
       cell.printAsOperand(o, state);
       o << ".";
-      fatal_error(str.c_str());
+      llvm::report_fatal_error(str.c_str());
     }
     return i->second;
   }

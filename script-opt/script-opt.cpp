@@ -1,16 +1,18 @@
 // This file is licensed under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+#include "JavaScript/JavaScriptDialect.h"
+#include "Python/PythonDialect.h"
+#include "Python/PythonLoadStorePass.h"
+
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/InitAllPasses.h"
 #include "mlir/Support/MlirOptMain.h"
 
-#include "JavaScript/JavaScriptDialect.h"
-#include "Python/PythonDialect.h"
-
 int main(int argc, char **argv) {
   mlir::registerAllPasses();
-  // TODO: Register standalone passes here.
+  // Register standalone passes here.
+  mlir::python::registerLoadStorePass();
 
   mlir::DialectRegistry registry;
   registry.insert<mlir::js::JavaScriptDialect,

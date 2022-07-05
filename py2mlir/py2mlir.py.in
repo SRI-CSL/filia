@@ -1,9 +1,12 @@
+#!/usr/bin/env python
+
 from __future__ import annotations
 import ast
 import sys
 import logging
 from typing import Dict
 
+sys.path.insert(0, "@CONFIG_PY_DIR@")
 import mlir_python.ir as mlir
 from mlir_python.dialects import (
   builtin as builtin_d,
@@ -1149,7 +1152,6 @@ def main():
 
     with mlir.Context() as ctx, mlir.Location.file("f.mlir", line=42, col=1, context=ctx):
         python_d.register_dialect()
-#        ctx.allow_unregistered_dialects = True
         m = translateModule(tree)
 
     if len(sys.argv) >= 3:

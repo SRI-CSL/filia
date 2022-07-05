@@ -9,22 +9,25 @@ struct ScopeField {
 
 using namespace llvm;
 
-template <> struct DenseMapInfo<ScopeField, void> {
+template <> struct llvm::DenseMapInfo<ScopeField, void> {
   static inline ScopeField getEmptyKey() {
-    return { .scope = DenseMapInfo<mlir::Value, void>::getEmptyKey(), .field = DenseMapInfo<llvm::StringRef, void>::getEmptyKey() };
+    return { .scope = llvm::DenseMapInfo<mlir::Value, void>::getEmptyKey(),
+             .field = llvm::DenseMapInfo<llvm::StringRef, void>::getEmptyKey() };
   }
 
   static inline ScopeField getTombstoneKey() {
-    return { .scope = DenseMapInfo<mlir::Value, void>::getTombstoneKey(), .field = DenseMapInfo<llvm::StringRef, void>::getTombstoneKey() };
+    return { .scope = llvm::DenseMapInfo<mlir::Value, void>::getTombstoneKey(),
+             .field = llvm::DenseMapInfo<llvm::StringRef, void>::getTombstoneKey() };
   }
 
   static unsigned getHashValue(const ScopeField& v) {
-    return DenseMapInfo<mlir::Value, void>::getHashValue(v.scope) ^ DenseMapInfo<llvm::StringRef, void>::getHashValue(v.field);
+    return llvm::DenseMapInfo<mlir::Value, void>::getHashValue(v.scope)
+         ^ llvm::DenseMapInfo<llvm::StringRef, void>::getHashValue(v.field);
   }
 
   static bool isEqual(const ScopeField& x, const ScopeField& y) {
-    return DenseMapInfo<mlir::Value, void>::isEqual(x.scope, y.scope)
-        && DenseMapInfo<llvm::StringRef, void>::isEqual(x.field, y.field);
+    return llvm::DenseMapInfo<mlir::Value, void>::isEqual(x.scope, y.scope)
+        && llvm::DenseMapInfo<llvm::StringRef, void>::isEqual(x.field, y.field);
   }
 };
 

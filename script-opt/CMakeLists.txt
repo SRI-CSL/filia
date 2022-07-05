@@ -13,3 +13,4 @@ llvm_update_compile_flags(script-opt)
 target_link_libraries(script-opt PRIVATE ${LIBS})
 
 mlir_check_all_link_libraries(script-opt)
+install(TARGETS script-opt)

@@ -1,6 +1,8 @@
 #include "PythonDomain.h"
 #include "ValueTranslator.h"
 
+using namespace llvm;
+
 CellDomain CellDomain::initializeFromPrev(
     ValueTranslator& translator,
     const CellDomain& srcDomain,
@@ -30,7 +32,11 @@ CellDomain CellDomain::initializeFromPrev(
         return CellDomain::value(ValueDomain::make_argument(argIndex));
       }
       break;
+    default:
+      report_fatal_error("Invalid value domain");
     }
+  default:
+    report_fatal_error("Invalid cell domain");
   }
 }
 
@@ -158,7 +164,7 @@ void LocalsDomain::populateFromPrev(ValueTranslator& translator, const LocalsDom
       o << ": Dropping cell ";
       cell.printAsOperand(o, state);
       o << ".";
-      fatal_error(str.c_str());
+      report_fatal_error(str.c_str());
 
 //      continue;
 
@@ -166,7 +172,7 @@ void LocalsDomain::populateFromPrev(ValueTranslator& translator, const LocalsDom
     auto p = cellValues.try_emplace(tgtCell,
       CellDomain::initializeFromPrev(translator, srcDomain, tgtCell));
     if (!p.second) {
-      fatal_error("Translator maps two values to single value.");
+      report_fatal_error("Translator maps two values to single value.");
     }
   }
 }
@@ -192,7 +198,7 @@ bool LocalsDomain::mergeFromPrev(ValueTranslator& translator, const LocalsDomain
     if (prevTgtIter == this->cellValues.end())
       continue;
     if (!seen.insert(tgtCell).second) {
-      fatal_error("Duplicate values in scope.");
+      report_fatal_error("Duplicate values in scope.");
     }
     if (prevTgtIter->second.mergeFromPrev(translator, srcDomain, tgtCell))
       changed = true;

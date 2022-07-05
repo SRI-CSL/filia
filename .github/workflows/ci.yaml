@@ -79,7 +79,10 @@ jobs:
     - name: Build LLVM
       run: cmake --build deps/llvm-build --target install
       if: steps.cache-llvm.outputs.cache-hit != 'true'
-#    - name: Configure
-#      run: cmake -S . -B build/debug -DCMAKE_BUILD_TYPE=Debug -DMLIR_DIR=deps/llvm-install/lib/cmake/mlir
-#    - name: Build
-#      run: cmake --build build/debug
+    - name: Configure
+      run: |
+        cmake -S . -B build/debug -DMLIR_DIR=deps/llvm-install/lib/cmake/mlir \
+           -DCMAKE_BUILD_TYPE=Debug \
+           -DCMAKE_INSTALL_PREFIX=dist/debug
+    - name: Build
+      run: cmake --build build/debug

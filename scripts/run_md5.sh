@@ -1,17 +1,17 @@
 #!/bin/bash
-set -e
+set -ex
 
 echo "Build"
-cmake --build build/debug
+cmake --build build/debug --target install
 
 MLIRFILE=example/md5.mlir
 
 echo "Generating $MLIRFILE"
-PYTHONPATH="build/debug/python_packages/python" python py2mlir/py2mlir.py example/md5_example.py > $MLIRFILE
+./dist/debug/bin/py2mlir.py example/md5_example.py > $MLIRFILE
 
 echo "Running python-opt"
 OPTMLIRFILE=example/md5_opt.mlir
-./build/debug/bin/python-opt --verify $MLIRFILE > $OPTMLIRFILE
-./build/debug/bin/script-opt -canonicalize $OPTMLIRFILE >example/md5_opt2.mlir
+./dist/debug/bin/script-opt --python-load-store $MLIRFILE > example/md5_opt3.mlir
+./dist/debug/bin/script-opt -canonicalize $OPTMLIRFILE > example/md5_opt2.mlir
 
 echo "Complete"

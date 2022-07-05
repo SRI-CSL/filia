@@ -1,215 +1,12 @@
-#include <stdio.h>
-#include <mlir/Parser.h>
-#include <mlir/InitAllDialects.h>
-#include <mlir/Pass/PassManager.h>
-#include <mlir/Pass/Pass.h>
-#include <llvm/ADT/ImmutableMap.h>
-#include <llvm/ADT/ScopedHashTable.h>
-#include <llvm/ADT/DenseSet.h>
-#include <llvm/ADT/SmallSet.h>
-#include <mlir/IR/BuiltinOps.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
-#include <mlir/IR/Dominance.h>
-#include <vector>
 
-#include "Python/PythonDialect.h"
-#include "Python/PythonOps.h"
-
-#include "PythonDomain.h"
+#include "Python/PythonLoadStorePass.h"
+#include "FunctionValueTransitionMap.h"
 #include "ValueTranslator.h"
 
-//using ValueArgumentMap = llvm::DenseMap<mlir::Value, unsigned>;
-
-using ArgMap = llvm::DenseMap<ScopeField, unsigned>;
-
-using BlockValueMap = llvm::DenseMap<mlir::Block*, llvm::DenseSet<mlir::Value>>;
-
-/**
- * Walk through all operations in a list of blocks to populate map from blocks to defined
- * values.
- *
- * @param definedValues Map to populate
- * @param blks Blocks in a function
- */
-static
-void populateDefinedValues(BlockValueMap& definedValues, mlir::Region* body) {
-  for (auto& blk : body->getBlocks()) {
-    llvm::DenseSet<mlir::Value> s;
-    for (auto arg : blk.getArguments())
-      s.insert(arg);
-    for (auto& op : blk) {
-      s.insert(op.getResults().begin(), op.getResults().end());
-    }
-    definedValues.try_emplace(&blk, std::move(s));
-  }
-}
-
-/**
- * Walk through all operations in a list of blocks to populate map from blocks to values
- * inherited from immediate dominators.
- */
-static
-void populateInheritedValues(mlir::DominanceInfo& domInfo, BlockValueMap& inheritedValues, const BlockValueMap& definedValues, mlir::Region* body) {
-  // Initialize inheritedValues
-  if (body->hasOneBlock()) return;
-
-  auto& domTree = domInfo.getDomTree(body);
-  auto& blks = body->getBlocks();
-  // Populate inherited values given defined values
-  for (auto blk = blks.begin(); blk != blks.end(); ++blk) {
-    auto p = inheritedValues.try_emplace(&*blk);
-    auto& s = p.first->second;
-    auto node = domTree.getNode(&*blk);
-    if (!node) continue;
-
-    node = node->getIDom();
-    while (node) {
-      auto domBlock = node->getBlock();
-      auto domDefValues = definedValues.find(domBlock);
-      if (domDefValues != definedValues.end()) {
-        auto defSet = domDefValues->second;
-        for (auto v : defSet) {
-          s.insert(v);
-        }
-      }
-      node = node->getIDom();
-    }
-  }
-}
-
-/**
- * This maps how values in one block are translated into a successor.
- */
-class FunctionValueTransitionMap {
-public:
-  // Maps MLIR values to index of argument they appear in block.
-  using SuccessorMap = std::vector<std::pair<mlir::Block*, mlir::MutableOperandRange>>;
-private:
-
-  // Maps each block to the values defined in the block.
-  BlockValueMap definedValues;
-
-  // Maps each block to the set of values defined when the block stars.
-  BlockValueMap inheritedValues;
-
-  // Build map from blocks to a map that maps successors to the value for block
-  // arguments.
-  llvm::DenseMap<mlir::Block*, SuccessorMap> transMap;
-
-  // Maps blocks to the numb
-  llvm::DenseMap<mlir::Block*, unsigned> argCount;
-
-  /**
-   * Adds a jump to the target block with the arguments to successor map.
-   * N.B.  The offset indicates the number of argumments the successor block
-   * provides with the remaining arguments provided by the operands.
-   *
-   * @param m Map to update
-   * @param offset Offset of first argument in successor blocks args is for.
-   * @param target Target block
-   * @param operands
-   */
-  static
-  void addSuccessorEdge(SuccessorMap& m, unsigned offset, mlir::Block* target, mlir::MutableOperandRange operands) {
-    m.push_back(std::make_pair(target, operands));
-  }
-
-  template<typename T>
-  static bool add_call_edges(SuccessorMap& m, mlir::Operation* opPtr) {
-    if (!mlir::isa<T>(opPtr))
-      return false;
-
-    auto op = mlir::cast<T>(opPtr);
-    addSuccessorEdge(m, 1, op.returnDest(), op.returnDestOperandsMutable());
-    addSuccessorEdge(m, 1, op.exceptDest(), op.exceptDestOperandsMutable());
-    return true;
-  }
-
-public:
-  FunctionValueTransitionMap(mlir::FuncOp fun, mlir::DominanceInfo& domInfo) {
-    ::mlir::Region* body = &fun.body();
-    populateDefinedValues(definedValues, body);
-    populateInheritedValues(domInfo, inheritedValues, definedValues, body);
-
-    auto& blks = body->getBlocks();
-    // Populate inherited values given defined values
-    for (auto blk = blks.begin(); blk != blks.end(); ++blk) {
-      auto& s = transMap.insert(std::make_pair(&*blk, SuccessorMap())).first->second;
-
-      auto opPtr = &blk->back();
-      if (add_call_edges<mlir::python::RetBranchOp>(s, opPtr)) {
-      } else if (add_call_edges<mlir::python::InvokeOp>(s, opPtr)) {
-      } else if (add_call_edges<mlir::python::InvertOp>(s, opPtr)) {
-      } else if (add_call_edges<mlir::python::NotOp>(s, opPtr)) {
-      } else if (add_call_edges<mlir::python::UAddOp>(s, opPtr)) {
-      } else if (add_call_edges<mlir::python::USubOp>(s, opPtr)) {
-      } else if (add_call_edges<mlir::python::AddOp>(s, opPtr)) {
-      } else if (add_call_edges<mlir::python::BitAndOp>(s, opPtr)) {
-      } else if (add_call_edges<mlir::python::BitOrOp>(s, opPtr)) {
-      } else if (add_call_edges<mlir::python::BitXorOp>(s, opPtr)) {
-      } else if (add_call_edges<mlir::python::DivOp>(s, opPtr)) {
-      } else if (add_call_edges<mlir::python::FloorDivOp>(s, opPtr)) {
-      } else if (add_call_edges<mlir::python::LShiftOp>(s, opPtr)) {
-      } else if (add_call_edges<mlir::python::ModOp>(s, opPtr)) {
-      } else if (add_call_edges<mlir::python::MultOp>(s, opPtr)) {
-      } else if (add_call_edges<mlir::python::MatMultOp>(s, opPtr)) {
-      } else if (add_call_edges<mlir::python::PowOp>(s, opPtr)) {
-      } else if (add_call_edges<mlir::python::RShiftOp>(s, opPtr)) {
-      } else if (add_call_edges<mlir::python::SubOp>(s, opPtr)) {
-      } else if (add_call_edges<mlir::python::EqOp>(s, opPtr)) {
-      } else if (add_call_edges<mlir::python::GtOp>(s, opPtr)) {
-      } else if (add_call_edges<mlir::python::GtEOp>(s, opPtr)) {
-      } else if (add_call_edges<mlir::python::InOp>(s, opPtr)) {
-      } else if (add_call_edges<mlir::python::IsOp>(s, opPtr)) {
-      } else if (add_call_edges<mlir::python::IsNotOp>(s, opPtr)) {
-      } else if (add_call_edges<mlir::python::LtOp>(s, opPtr)) {
-      } else if (add_call_edges<mlir::python::LtEOp>(s, opPtr)) {
-      } else if (add_call_edges<mlir::python::NotEqOp>(s, opPtr)) {
-      } else if (add_call_edges<mlir::python::NotInOp>(s, opPtr)) {
-      } else if (auto op = mlir::dyn_cast<mlir::cf::BranchOp>(opPtr)) {
-        addSuccessorEdge(s, 0, op.getDest(), op.getDestOperandsMutable());
-      } else if (auto op = mlir::dyn_cast<mlir::cf::CondBranchOp>(opPtr)) {
-        addSuccessorEdge(s, 0, op.getTrueDest(),  op.getTrueDestOperandsMutable());
-        addSuccessorEdge(s, 0, op.getFalseDest(), op.getFalseDestOperandsMutable());
-//      } else if (mlir::isa<mlir::python::ThrowOp>(opPtr)) {
-        // Do nothing on throw
-      } else if (mlir::isa<mlir::func::ReturnOp>(opPtr)) {
-        // Do nothing on return
-      } else {
-        fprintf(stderr, "Unsupported terminal operator: ");
-        opPtr->getName().print(::llvm::errs());
-        fprintf(stderr, "\n");
-        exit(-1);
-      }
-    }
-  }
-
-  const InheritedSet& getInheritedValues(mlir::Block* block) {
-    auto i = inheritedValues.find(block);
-    if (i == inheritedValues.end()) {
-      fatal_error("Could not find block.");
-    }
-    return i->second;
-  }
-
-  const SuccessorMap& succMap(mlir::Block* block) {
-    auto i = transMap.find(block);
-    if (i == transMap.end()) {
-      fatal_error("Could not find block.");
-    }
-    return i->second;
-  }
-};
-
-class ValueTranslator;
+using namespace llvm;
 
 namespace {
-
-void initContext(mlir::MLIRContext& context, const mlir::DialectRegistry& registry) {
-  context.appendDialectRegistry(registry);
-  context.loadDialect<mlir::func::FuncDialect>();
-  context.loadDialect<mlir::python::PythonDialect>();
-}
 
 /**
  * This contains information needed to calculate block domains
@@ -253,13 +50,12 @@ public:
     return !pending.empty();
   }
 
-
   /**
    * Get next block and initial abstract state.
    */
   BlockArgInfo& nextBlock() {
     if (pending.empty()) {
-      fatal_error("nextBlock called when pending is empty.");
+      report_fatal_error("nextBlock called when pending is empty.");
     }
     auto p = pending.back();
     pending.pop_back();
@@ -331,7 +127,7 @@ BlockInvariantFixpointQueue::addSuccessors(
   // Get list of arguments that successor needs.
   auto argIter = blockMap.find(tgt);
   if (argIter == blockMap.end()) {
-    fatal_error("Could not find args for block.");
+    report_fatal_error("Could not find args for block.");
   }
 
   for (auto a : tgtArgs) {
@@ -352,90 +148,6 @@ BlockInvariantFixpointQueue::addSuccessors(
     rng.push_back(v);
   }
 }
-
-/*
-void
-BlockInvariantFixpointQueue::addSuccessors(
-    FunctionValueTransitionMap& m,
-    mlir::Block* src,
-    mlir::OpBuilder& builder,
-    const std::vector<mlir::Value> argValues,
-    const LocalsDomain& term) {
-
-  auto location = builder.getUnknownLoc();
-
-  // Iterate through successors.
-  auto& smap = m.succMap(src);
-  for (auto i = smap.begin(); i != smap.end(); ++i) {
-    auto tgt = i->first;
-    auto rng = i->second;
-
-    // Get list of arguments that successor needs.
-    auto argIter = blockMap.find(tgt);
-    if (argIter == blockMap.end()) {
-      fatal_error("Could not find args for block.");
-    }
-    auto blockArgs = &argIter->second;
-    // Iterate through arguments
-    for (auto p : blockArgs->argVec) {
-      // Skip if arg is no longer used.
-      if (!p.first.scope)
-        continue;
-
-      // Lookup value to pass to block
-      mlir::Value v =
-        term.getScopeValue(p.first.scope, p.first.field,
-          builder, location, argValues);
-
-      // Add value to operand list.
-      rng.append(v);
-    }
-  }
-}
-*/
-
-class PythonLoadStoreOptimization : public mlir::PassWrapper<PythonLoadStoreOptimization,
-                                           mlir::OperationPass<mlir::ModuleOp>> {
-private:
-  /**
-   * This function updates \p locals by applying the operations in the block.
-   *
-   * @param locals Invariants on block
-   * @param block Block to anlyze
-   */
-  void applyBlockOps(LocalsDomain& locals, mlir::Block* block);
-  void optimizeBlock(BlockInvariantFixpointQueue& inv, mlir::Block* block, const std::vector<mlir::Value>& argValues, LocalsDomain& locals);
-public:
-
-  llvm::StringRef getArgument() const final {
-    // This is the argument used to refer to the pass in
-    // the textual format (on the commandline for example).
-    return "resolveScope";
-  }
-
-  void optimizeFunction(mlir::FuncOp fun);
-
-  void runOnOperation() override;
-};
-
-void PythonLoadStoreOptimization::applyBlockOps(LocalsDomain& locals, mlir::Block* block) {
-  for (auto opPtr = block->begin(); opPtr != block->end(); ++opPtr) {
-    if (auto derivedOp = mlir::dyn_cast<mlir::python::CellAlloc>(opPtr)) {
-      locals.cellAlloc(derivedOp);
-    } else if (auto derivedOp = mlir::dyn_cast<mlir::python::CellStore>(opPtr)) {
-      locals.cellStore(derivedOp);
-    } else if (auto op = mlir::dyn_cast<mlir::python::CellLoad>(opPtr)) {
-      // Do nothing
-    }
-  }
-}
-
-using TermSubstFn = std::function<void(
-  BlockInvariantFixpointQueue& inv,
-  std::vector<mlir::Operation*>& toDelete,
-  const std::vector<mlir::Value>& argValues,
-  const LocalsDomain& term,
-  mlir::Operation* opPtr)>;
 
 template<typename T>
 void addUnaryOpArgs(BlockInvariantFixpointQueue& inv,
@@ -597,6 +309,14 @@ void addOpArgs<mlir::python::RetBranchOp>(
   opPtr->erase();
 }
 
+using TermSubstFn = std::function<void(
+  BlockInvariantFixpointQueue& inv,
+  std::vector<mlir::Operation*>& toDelete,
+  const std::vector<mlir::Value>& argValues,
+  const LocalsDomain& term,
+  mlir::Operation* opPtr)>;
+
+
 using TermSubstFnMap = llvm::DenseMap<llvm::StringRef, TermSubstFn>;
 
 template<typename T>
@@ -614,13 +334,14 @@ static void addOp(TermSubstFnMap& m) {
   m.try_emplace(T::getOperationName(), &addOpArgs<T>);
 }
 
+
 /**
  * Create map from supported terminal function names to the code for optimizng them.
  *
  */
-llvm::DenseMap<llvm::StringRef, TermSubstFn> mkTermMap(void) {
+TermSubstFnMap mkTermMap(void) {
 
-  llvm::DenseMap<llvm::StringRef, TermSubstFn> termFns;
+  TermSubstFnMap termFns;
   addOp<mlir::cf::BranchOp>(termFns);
   addOp<mlir::cf::CondBranchOp>(termFns);
   addOp<mlir::func::ReturnOp>(termFns);
@@ -656,11 +377,35 @@ llvm::DenseMap<llvm::StringRef, TermSubstFn> mkTermMap(void) {
 
 llvm::DenseMap<llvm::StringRef, TermSubstFn> termFns = mkTermMap();
 
-void PythonLoadStoreOptimization::optimizeBlock(
-                      BlockInvariantFixpointQueue& inv,
-                      mlir::Block* block,
-                      const std::vector<mlir::Value>& argValues,
-                      LocalsDomain& locals) {
+}
+
+namespace mlir {
+namespace python {
+
+/**
+ * This function updates \p locals by applying the operations in the block.
+ *
+ * @param locals Invariants on block
+ * @param block Block to anlyze
+ */
+static
+void applyBlockOps(LocalsDomain& locals, mlir::Block* block) {
+  for (auto opPtr = block->begin(); opPtr != block->end(); ++opPtr) {
+    if (auto derivedOp = mlir::dyn_cast<mlir::python::CellAlloc>(opPtr)) {
+      locals.cellAlloc(derivedOp);
+    } else if (auto derivedOp = mlir::dyn_cast<mlir::python::CellStore>(opPtr)) {
+      locals.cellStore(derivedOp);
+    } else if (auto op = mlir::dyn_cast<mlir::python::CellLoad>(opPtr)) {
+      // Do nothing
+    }
+  }
+}
+
+static
+void optimizeBlock(BlockInvariantFixpointQueue& inv,
+                   mlir::Block* block,
+                   const std::vector<mlir::Value>& argValues,
+                   LocalsDomain& locals) {
 
   std::vector<mlir::Operation*> toDelete;
   bool doSucc = true;
@@ -692,13 +437,15 @@ void PythonLoadStoreOptimization::optimizeBlock(
     std::string str;
     llvm::raw_string_ostream o(str);
     o << "Missing support for terminal instruction " << block->back() << ".";
-    fatal_error(str.c_str());
+    report_fatal_error(str.c_str());
   }
 }
 
-void PythonLoadStoreOptimization::optimizeFunction(mlir::FuncOp fun) {
+static
+void optimizeFunction(mlir::MLIRContext* ctx,
+                      mlir::DominanceInfo& domInfo,
+                      mlir::FuncOp fun) {
 
-  mlir::DominanceInfo& domInfo = getAnalysis<mlir::DominanceInfo>();
   FunctionValueTransitionMap fvtm(fun, domInfo);
 
   auto& blks = fun.getBlocks();
@@ -717,7 +464,6 @@ void PythonLoadStoreOptimization::optimizeFunction(mlir::FuncOp fun) {
     inv.updateSuccessors(fvtm, block, locals);
   }
 
-  auto ctx = &this->getContext();
 
   // Run optimization passes
   auto pythonValueType = mlir::python::ValueType::get(ctx);
@@ -742,8 +488,23 @@ void PythonLoadStoreOptimization::optimizeFunction(mlir::FuncOp fun) {
   }
 }
 
+class PythonLoadStoreOptimization
+   : public PassWrapper<PythonLoadStoreOptimization, OperationPass<mlir::ModuleOp>> {
+public:
+
+  llvm::StringRef getArgument() const final {
+    // This is the argument used to refer to the pass in
+    // the textual format (on the commandline for example).
+    return "python-load-store";
+  }
+
+  void runOnOperation() override;
+};
 
 void PythonLoadStoreOptimization::runOnOperation() {
+  auto ctx = &this->getContext();
+  mlir::DominanceInfo& domInfo = getAnalysis<mlir::DominanceInfo>();
+
   // Get the current func::FuncOp operation being operated on.
   mlir::ModuleOp m = getOperation();
   auto& r = m.body();
@@ -751,99 +512,16 @@ void PythonLoadStoreOptimization::runOnOperation() {
     for (auto iOp = iBlock->begin(); iOp != iBlock->end(); ++iOp) {
       auto& op = *iOp;
       if (auto funOp = mlir::dyn_cast<mlir::FuncOp>(op)) {
-        optimizeFunction(funOp);
+        optimizeFunction(ctx, domInfo, funOp);
       }
     }
   }
 }
 
+void registerLoadStorePass() {
+  mlir::PassRegistration<mlir::python::PythonLoadStoreOptimization>();
 }
 
-struct Args {
-  Args(int argc, const char** argv);
 
-  // Path of file to read from
-  const char* path;
-  // Flag indicates we should verify output
-  bool verify;
-  // Include debug information when printing
-  bool printDebug;
-  // Use generic represntation when printing
-  bool printGeneric;
-};
-
-
-Args::Args(int argc, const char** argv) {
-  path = 0;
-  verify = false;
-  printDebug = false;
-  printGeneric = false;
-
-  for (int i = 1; i != argc; ++i) {
-    if (strcmp(argv[i], "--verify") == 0) {
-      verify = true;
-    } else if (strcmp(argv[i], "--print-debug")) {
-      printDebug = true;
-    } else if (strcmp(argv[i], "--print-generic")) {
-      printGeneric = true;
-    } else {
-      if (path != 0) {
-        fprintf(stderr, "Please specify only a single file to read.");
-        exit(-1);
-      }
-      path = argv[i];
-    }
-  }
-
-  if (!path) {
-    fprintf(stderr, "Please provide the path to read.\n");
-    exit(-1);
-  }
 }
-
-int main(int argc, const char** argv) {
-  Args args(argc, argv);
-
-  mlir::DialectRegistry registry;
-  registry.insert<mlir::python::PythonDialect>();
-
-  mlir::MLIRContext ctx;
-  initContext(ctx, registry);
-  mlir::Block block;
-  mlir::LogicalResult r = mlir::parseSourceFile(args.path, &block, &ctx);
-  if (r.failed()) {
-    fprintf(stderr, "Failed to parse mlir file file.\n");
-    return -1;
-  }
-  if (block.getOperations().size() != 1) {
-    fprintf(stderr, "Missing module.\n");
-    return -1;
-  }
-
-  mlir::PassRegistration<PythonLoadStoreOptimization>();
-
-  // Create a top-level `PassManager` class. If an operation type is not
-  // explicitly specific, the default is the builtin `module` operation.
-  mlir::PassManager pm(&ctx);
-  pm.enableVerifier(args.verify);
-//  auto &nestedFunctionPM = pm.nest<mlir::ModuleOp>();
-//  nestedFunctionPM.addPass(std::make_unique<ScopeOptimization>());
-  pm.addPass(std::make_unique<PythonLoadStoreOptimization>());
-//  pm.addPass()
-
-  if (failed(pm.run(&*block.begin()))) {
-    fprintf(stderr, "Pass failed\n");
-    exit(-1);
-  }
-
-  mlir::OpPrintingFlags flags;
-  if (args.printDebug)
-    flags.enableDebugInfo();
-  if (args.printGeneric)
-    flags.printGenericOpForm();
-
-  block.begin()->print(llvm::outs(), flags);
-  llvm::outs() << "\n";
-
-  return 0;
 }

@@ -2,6 +2,27 @@ name: CI
 
 on: [push]
 jobs:
+  js2mlir:
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: js2mlir
+    strategy:
+      matrix:
+        include:
+        - name: Ubuntu
+          os: ubuntu-22.04
+      # complete all jobs
+      fail-fast: false
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+    - name: NPM Install
+      run: npm install
+    - name: NPM Build
+      run: npm run build
+    - name: NPM Run example
+      run:  node ./dist/app.js script ../example/insecure_eval.js app.mlir
   build:
     runs-on: ${{ matrix.os }}
     defaults:

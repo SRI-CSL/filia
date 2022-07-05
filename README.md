@@ -1,4 +1,4 @@
-# FILIA
+# Filia
 
 Filia is a project to build multi-language program verification and bug finding
 capabilities using the MLIR compiler infrastructure.  MLIR is a general

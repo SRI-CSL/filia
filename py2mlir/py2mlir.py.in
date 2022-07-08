@@ -434,6 +434,10 @@ class VariableCapture(ast.NodeVisitor):
     # See https://docs.python.org/3/reference/compound_stmts.html#with
     def visit_With(self, w: ast.With):
         for item in w.items:
+            var = item.optional_vars
+            if var != None:
+                assert(isinstance(var, ast.Name))
+                self.addVar(var, var.id)
             self.checked_visit_expr(item.context_expr)
         self.visit_stmts(w.body)
         return True
@@ -463,10 +467,29 @@ def alloc_variable_cells(map: CellMap, names: list[mlir.StringAttr], cells: list
             names.append(mlir.StringAttr.get(var))
             cells.append(cell)
 
+# Invoke the given method.
+def do_invoke(block: mlir.Block,
+              method: mlir.Value,
+              args: list[mlir.Value],
+              keywords: list[str]|None,
+              returnBlock: mlir.Block,
+              exceptBlock: mlir.Block):
+
+    if keywords == None or len(keywords) == 0:
+        keyAttr = None
+    else:
+        keyAttrs = []
+        for k in keywords:
+            keyAttrs.append(mlir.StringAttr.get(k))
+        keyAttr = mlir.ArrayAttr.get(keyAttrs)
+    with mlir.InsertionPoint(block):
+        python_d.InvokeOp(method, args, keyAttr, [], [], returnBlock, exceptBlock)
+
 # This is the main class
 class Translator(ast.NodeVisitor):
     _cell_map: CellMap
     _scope_value: mlir.Value
+    _except_block: mlir.Block | None
 
     def __init__(self,
                  m: Module,
@@ -475,8 +498,8 @@ class Translator(ast.NodeVisitor):
                  cell_map: CellMap):
         self.module = m
         self.block = block
-        self.onDone = None
-        self.exceptBlock = None
+        self._on_done = None
+        self._except_block = None
         self._cell_map = cell_map
         self._scope_value = scope
 
@@ -515,36 +538,27 @@ class Translator(ast.NodeVisitor):
             return python_d.GetMethod(w, mlir.StringAttr.get(name))
 
 
-    def get_except_block(self):
-        if self.exceptBlock != None:
-           return self.exceptBlock
+    def get_except_block(self) -> mlir.Block:
+        if self._except_block != None:
+           return self._except_block
 
         valueType = python_d.ValueType.get()
-        exceptBlock = self.block.create_after(valueType)
+        exceptBlock = self.block.create_after(valueType, valueType)
         with mlir.InsertionPoint(exceptBlock):
-            r = python_d.MkExceptOp(exceptBlock.arguments[0])
+            e  = exceptBlock.arguments[0]
+            tb = exceptBlock.arguments[1]
+            r = python_d.MkExceptOp(e, tb)
             func_d.ReturnOp([r])
 
-        self.exceptBlock = exceptBlock
+        self._except_block = exceptBlock
         return exceptBlock
 
     # Invoke the given method.
     def invoke(self, method: mlir.Value, args: list[mlir.Value], keywords=None) -> mlir.Value:
-        if keywords == None or len(keywords) == 0:
-            keyAttr = None
-        else:
-            keyAttrs = []
-            for k in keywords:
-                keyAttrs.append(mlir.StringAttr.get(k))
-            keyAttr = mlir.ArrayAttr.get(keyAttrs)
-
         valueType = python_d.ValueType.get()
         exceptBlock = self.get_except_block()
         returnBlock = self.block.create_after(valueType)
-
-        with mlir.InsertionPoint(self.block):
-            python_d.InvokeOp(method, args, keyAttr, [], [], returnBlock, exceptBlock)
-
+        do_invoke(self.block, method, args, keywords, returnBlock, exceptBlock)
         self.block = returnBlock
         return returnBlock.arguments[0]
 
@@ -616,7 +630,6 @@ class Translator(ast.NodeVisitor):
             fun = builtin_d.FuncOp(symbol_name, tp)
         fun_block = mlir.Block.create_at_start(fun.regions[0], arg_types)
         # Initialize scope from function arguments.
-
         fun_cell_map = {}
 
         fun_name_attrs = []
@@ -1041,8 +1054,8 @@ class Translator(ast.NodeVisitor):
         return True
 
     def visit_Return(self, node: ast.Return):
-        if self.onDone:
-            self.onDone()
+        if self._on_done:
+            self._on_done()
 
         if node.value != None:
             ret = self.checked_visit_expr(node.value)
@@ -1054,30 +1067,93 @@ class Translator(ast.NodeVisitor):
 
     # See https://docs.python.org/3/reference/compound_stmts.html#with
     def visit_With(self, w: ast.With):
-        #FIXME. Add try/finally blocks
-        exitMethods = []
+        valueType = python_d.ValueType.get()
+
+        def addExitExceptionHandler(var, nextBlock):
+            # Create block to catch exception
+            newExceptBlock = self.block.create_after(valueType, valueType)
+            # This block will drop the return value and pass the exception to the except_block
+            propExceptBlock = newExceptBlock.create_after(valueType, valueType, valueType)
+            with mlir.InsertionPoint(newExceptBlock):
+                none = python_d.NoneOp()
+                e = newExceptBlock.arguments[0]
+                tb = newExceptBlock.arguments[1]
+                tp = python_d.TypeOp(e)
+                if var != None:
+                    python_d.CellStore(self._cell_map[var.id], none)
+                python_d.InvokeOp(exit, [tp, e, tb], None, [e, tb], [], propExceptBlock, self._except_block)
+            with mlir.InsertionPoint(propExceptBlock):
+                r = propExceptBlock.arguments[0]
+                c = python_d.Truthy(r)
+                e  = propExceptBlock.arguments[1]
+                tb = propExceptBlock.arguments[2]
+                cf_d.CondBranchOp(c, [r],  [e, tb], nextBlock, self._except_block)
+            self._except_block = newExceptBlock
+
+        assert(len(w.items) > 0)
+
+        # Make sure self._except_block is set
+        self.get_except_block()
+
+        exit = None
+        var = None
+        # Block that control flow will jump to after final
+        # The argument is the
+        finalBlock = self.block.create_after(valueType)
+        nextBlock = finalBlock
         for item in w.items:
+            if exit != None:
+                # Update returnBlock
+                exitBlock = self.block.create_after(valueType)
+                # Calls exit and jumps to return
+                with mlir.InsertionPoint(exitBlock):
+                    none = python_d.NoneOp()
+                    if var != None:
+                        python_d.CellStore(self._cell_map[var.id], none)
+                    python_d.InvokeOp(exit, [none, none, none], None,
+                       [], [], nextBlock, self._except_block)
+
+                # Update nextBlock and _except_block
+                addExitExceptionHandler(var, nextBlock)
+                nextBlock = exitBlock
+
             ctx = self.checked_visit_expr(item.context_expr)
             assert(ctx != None)
             enter = self.get_method(ctx, '__enter__')
             exit = self.get_method(ctx, '__exit__')
-            r  = self.invoke(enter, [])
+
+            postEnterBlock = self.block.create_after(valueType)
+            with mlir.InsertionPoint(self.block):
+                python_d.InvokeOp(enter, [], None, [], [], postEnterBlock, self._except_block)
+
             var = item.optional_vars
             if var != None:
                 assert(isinstance(var, ast.Name))
-                cell_store(self.block, self.map[var.id], r)
-            exitMethods.append(exit)
-        prevDone = self.onDone
-        def onDone():
-            for exit in reversed(exitMethods):
-                self.invoke(exit, [])
-            if prevDone:
+                cell_store(postEnterBlock, self._cell_map[var.id], ctx)
+            self.block = postEnterBlock
+
+        assert(exit != None)
+        addExitExceptionHandler(var, nextBlock)
+
+        prevDone = self._on_done
+        def on_done1():
+            block = self.block
+            with mlir.InsertionPoint(block):
+                none = python_d.NoneOp()
+                python_d.InvokeOp(exit, [none, none, none], None, [], [], nextBlock, self._except_block)
+            self.block = finalBlock
+        if prevDone:
+            def on_done():
+                on_done1()
                 prevDone()
-        self.onDone = onDone
+            self._on_done = on_done
+        else:
+            self._on_done = on_done1
+
         cont = self.visit_stmts(w.body)
-        self.onDone = prevDone
+        self._on_done = prevDone
         if cont:
-            onDone()
+            on_done1()
         return cont
 
     def visit_While(self, s: ast.While) -> bool:

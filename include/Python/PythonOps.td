@@ -357,6 +357,16 @@ def Python_TupleGet : Python_Op<"tuple_get", [NoSideEffect]> {
     let assemblyFormat = "$value `,` $idx attr-dict `:` type($result)";
 }
 
+def Python_TypeOp : Python_Op<"type", [NoSideEffect]> {
+    let summary = "Returns type of a given value.";
+    let description = [{
+        Returns type of a value in Python.
+    }];
+    let arguments = (ins Python_Value:$value);
+    let results = (outs Python_Value:$result);
+    let assemblyFormat = "$value attr-dict `:` type($result)";
+}
+
 def Python_FunctionRef : Python_Op<"function_ref", [NoSideEffect]> {
     let summary = "Create a Python value referencing a function.";
     let arguments =
@@ -386,9 +396,9 @@ def Python_MkExceptOp : Python_Op<"mk_except", [NoSideEffect]> {
     let description = [{
         Stores the value in the cell.
     }];
-    let arguments = (ins Python_Value:$value);
+    let arguments = (ins Python_Value:$value, Python_Value:$traceback);
     let results = (outs Python_ReturnValue:$result);
-    let assemblyFormat = "$value attr-dict `:` type($result)";
+    let assemblyFormat = "$value `,` $traceback attr-dict `:` type($result)";
 }
 
 def Python_RetBranchOp : Python_Op<"ret_branch", [AttrSizedOperandSegments,Terminator]> {

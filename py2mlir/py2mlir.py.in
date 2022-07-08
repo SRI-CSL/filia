@@ -1072,21 +1072,19 @@ class Translator(ast.NodeVisitor):
         def addExitExceptionHandler(var, nextBlock):
             # Create block to catch exception
             newExceptBlock = self.block.create_after(valueType, valueType)
+            e  = newExceptBlock.arguments[0]
+            tb = newExceptBlock.arguments[1]
             # This block will drop the return value and pass the exception to the except_block
-            propExceptBlock = newExceptBlock.create_after(valueType, valueType, valueType)
+            propExceptBlock = newExceptBlock.create_after(valueType)
             with mlir.InsertionPoint(newExceptBlock):
                 none = python_d.NoneOp()
-                e = newExceptBlock.arguments[0]
-                tb = newExceptBlock.arguments[1]
                 tp = python_d.TypeOp(e)
                 if var != None:
                     python_d.CellStore(self._cell_map[var.id], none)
-                python_d.InvokeOp(exit, [tp, e, tb], None, [e, tb], [], propExceptBlock, self._except_block)
+                python_d.InvokeOp(exit, [tp, e, tb], None, [], [], propExceptBlock, self._except_block)
             with mlir.InsertionPoint(propExceptBlock):
                 r = propExceptBlock.arguments[0]
                 c = python_d.Truthy(r)
-                e  = propExceptBlock.arguments[1]
-                tb = propExceptBlock.arguments[2]
                 cf_d.CondBranchOp(c, [r],  [e, tb], nextBlock, self._except_block)
             self._except_block = newExceptBlock
 

@@ -1,7 +1,8 @@
 #include <stdio.h>
 #include "mlir/IR/BuiltinDialect.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "mlir/Parser.h"
+#include "mlir/Parser/Parser.h"
 
 #include "JavaScript/JavaScriptDialect.h"
 #include "Python/PythonDialect.h"
@@ -10,7 +11,7 @@ void testJavascript() {
   mlir::MLIRContext context;
   context.loadDialect<mlir::js::JavaScriptDialect>();
   mlir::OwningOpRef<mlir::ModuleOp> owning =
-      mlir::parseSourceString(
+      mlir::parseSourceString<mlir::ModuleOp>(
         "%0 = js.undefined : !js.value\n"
         "%1 = js.empty_locals : !js.locals\n"
         "%2 = js.call %0(%0) {js.optional, js.spread=[0]} : !js.value\n"
@@ -29,7 +30,7 @@ void testPython() {
   context.loadDialect<mlir::func::FuncDialect>();
   context.loadDialect<mlir::python::PythonDialect>();
   mlir::OwningOpRef<mlir::ModuleOp> owning =
-      mlir::parseSourceString(
+      mlir::parseSourceString<mlir::ModuleOp>(
 "module {\n"
 "  func @script_main() {\n"
 "    %0 = python.undefined : !python.value\n"

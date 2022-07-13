@@ -3,8 +3,7 @@
 from __future__ import annotations
 import ast
 import sys
-import logging
-from typing import Dict
+from typing import Callable, Dict
 
 sys.path.insert(0, "@CONFIG_PY_DIR@")
 import mlir_python.ir as mlir
@@ -39,7 +38,7 @@ def invoke_next(next: mlir.Value, curBlock: mlir.Block, doneBlock: mlir.Block, t
     exceptBlock = nextBlock.create_after(valueType)
 
     with mlir.InsertionPoint(nextBlock):
-        python_d.InvokeOp(next, [], None, [], [], bodyBlock, exceptBlock)
+        python_d.RetBranchOp(python_d.InvokeOp(next, [], None), [], [], bodyBlock, exceptBlock)
 
     exception   = exceptBlock.arguments[0]
     with mlir.InsertionPoint(exceptBlock):
@@ -483,7 +482,7 @@ def do_invoke(block: mlir.Block,
             keyAttrs.append(mlir.StringAttr.get(k))
         keyAttr = mlir.ArrayAttr.get(keyAttrs)
     with mlir.InsertionPoint(block):
-        python_d.InvokeOp(method, args, keyAttr, [], [], returnBlock, exceptBlock)
+        python_d.RetBranchOp(python_d.InvokeOp(method, args, keyAttr), [], [], returnBlock, exceptBlock)
 
 # This is the main class
 class Translator(ast.NodeVisitor):
@@ -627,7 +626,7 @@ class Translator(ast.NodeVisitor):
 
         with mlir.InsertionPoint(self.module.mlir.body):
             tp = mlir.FunctionType.get(arg_types, [returnValueType])
-            fun = builtin_d.FuncOp(symbol_name, tp)
+            fun = func_d.FuncOp(symbol_name, tp)
         fun_block = mlir.Block.create_at_start(fun.regions[0], arg_types)
         # Initialize scope from function arguments.
         fun_cell_map = {}
@@ -702,14 +701,13 @@ class Translator(ast.NodeVisitor):
         ast.Sub: python_d.SubOp
     }
 
-    def apply_binop(self, left: mlir.Value, op, right: mlir.Value) -> mlir.Value:
+    def apply_binop(self, left: mlir.Value, op: Callable[[mlir.Value, mlir.Value], mlir.Value], right: mlir.Value) -> mlir.Value:
         valueType = python_d.ValueType.get()
         exceptBlock = self.get_except_block()
         returnBlock = self.block.create_after(valueType)
 
         with mlir.InsertionPoint(self.block):
-            op(left, right, [], [], returnBlock, exceptBlock)
-
+            python_d.RetBranchOp(op(left, right), [], [], returnBlock, exceptBlock)
         self.block = returnBlock
         return returnBlock.arguments[0]
 
@@ -942,7 +940,7 @@ class Translator(ast.NodeVisitor):
         returnBlock = self.block.create_after(valueType)
 
         with mlir.InsertionPoint(self.block):
-            op(arg, [], [], returnBlock, exceptBlock)
+            python_d.RetBranchOp(op(arg), [], [], returnBlock, exceptBlock)
 
         self.block = returnBlock
         return returnBlock.arguments[0]
@@ -1081,7 +1079,8 @@ class Translator(ast.NodeVisitor):
                 tp = python_d.TypeOp(e)
                 if var != None:
                     python_d.CellStore(self._cell_map[var.id], none)
-                python_d.InvokeOp(exit, [tp, e, tb], None, [], [], propExceptBlock, self._except_block)
+                python_d.RetBranchOp(python_d.InvokeOp(exit, [tp, e, tb], None),
+                    [], [], propExceptBlock, self._except_block)
             with mlir.InsertionPoint(propExceptBlock):
                 r = propExceptBlock.arguments[0]
                 c = python_d.Truthy(r)
@@ -1108,8 +1107,9 @@ class Translator(ast.NodeVisitor):
                     none = python_d.NoneOp()
                     if var != None:
                         python_d.CellStore(self._cell_map[var.id], none)
-                    python_d.InvokeOp(exit, [none, none, none], None,
-                       [], [], nextBlock, self._except_block)
+                    python_d.RetBranchOp(
+                        python_d.InvokeOp(exit, [none, none, none], None),
+                        [], [], nextBlock, self._except_block)
 
                 # Update nextBlock and _except_block
                 addExitExceptionHandler(var, nextBlock)
@@ -1122,7 +1122,9 @@ class Translator(ast.NodeVisitor):
 
             postEnterBlock = self.block.create_after(valueType)
             with mlir.InsertionPoint(self.block):
-                python_d.InvokeOp(enter, [], None, [], [], postEnterBlock, self._except_block)
+                python_d.RetBranchOp(
+                    python_d.InvokeOp(enter, [], None),
+                    [], [], postEnterBlock, self._except_block)
 
             var = item.optional_vars
             if var != None:
@@ -1138,7 +1140,9 @@ class Translator(ast.NodeVisitor):
             block = self.block
             with mlir.InsertionPoint(block):
                 none = python_d.NoneOp()
-                python_d.InvokeOp(exit, [none, none, none], None, [], [], nextBlock, self._except_block)
+                python_d.RetBranchOp(
+                    python_d.InvokeOp(exit, [none, none, none], None),
+                    [], [], nextBlock, self._except_block)
             self.block = finalBlock
         if prevDone:
             def on_done():
@@ -1198,7 +1202,7 @@ def translateModule(tree) -> mlir.Module:
     with mlir.InsertionPoint(mod.mlir.body):
         returnValueType = python_d.ReturnValueType.get()
         tp = mlir.FunctionType.get([], [returnValueType])
-        fun = builtin_d.FuncOp("script_main", tp)
+        fun = func_d.FuncOp("script_main", tp)
     fun_block = mlir.Block.create_at_start(fun.regions[0], [])
     if len(var_scope.parent_vars) > 0:
         raise Exception(f"Did not expect unknown variables {var_scope.parent_vars}")

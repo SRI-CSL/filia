@@ -150,49 +150,6 @@ BlockInvariantFixpointQueue::addSuccessors(
 }
 
 template<typename T>
-void addUnaryOpArgs(BlockInvariantFixpointQueue& inv,
-                  std::vector<mlir::Operation*>& toDelete,
-                  const std::vector<mlir::Value>& argValues,
-                  const LocalsDomain& term,
-                  mlir::Operation* opPtr) {
-  assert(mlir::isa<T>(opPtr));
-  auto op = mlir::cast<T>(opPtr);
-  auto builder(mlir::OpBuilder::atBlockEnd(opPtr->getBlock()));
-
-  std::vector<mlir::Value> returnOps;
-  inv.addSuccessors(returnOps, op.returnDest(), op.returnDestOperands(), builder, argValues, term);
-
-  std::vector<mlir::Value> exceptOps;
-  inv.addSuccessors(exceptOps, op.exceptDest(), op.exceptDestOperands(), builder, argValues, term);
-
-  builder.create<T>(op.getLoc(), op.arg(),
-    returnOps, exceptOps, op.returnDest(), op.exceptDest());
-  opPtr->erase();
-}
-
-template<typename T>
-void addBinOpArgs(BlockInvariantFixpointQueue& inv,
-                  std::vector<mlir::Operation*>& toDelete,
-                  const std::vector<mlir::Value>& argValues,
-                  const LocalsDomain& term,
-                  mlir::Operation* opPtr) {
-  assert(mlir::isa<T>(opPtr));
-
-  auto op = mlir::cast<T>(opPtr);
-  auto builder(mlir::OpBuilder::atBlockEnd(opPtr->getBlock()));
-
-  std::vector<mlir::Value> returnOps;
-  inv.addSuccessors(returnOps, op.returnDest(), op.returnDestOperands(), builder, argValues, term);
-
-  std::vector<mlir::Value> exceptOps;
-  inv.addSuccessors(exceptOps, op.exceptDest(), op.exceptDestOperands(), builder, argValues, term);
-
-  builder.create<T>(op.getLoc(), op.lhs(), op.rhs(),
-    returnOps, exceptOps, op.returnDest(), op.exceptDest());
-  opPtr->erase();
-}
-
-template<typename T>
 void addOpArgs(BlockInvariantFixpointQueue& inv,
                std::vector<mlir::Operation*>& toDelete,
                const std::vector<mlir::Value>& argValues,
@@ -242,41 +199,6 @@ void addOpArgs<mlir::cf::CondBranchOp>(
 }
 
 template<>
-void addOpArgs<mlir::python::InvokeOp>(
-        BlockInvariantFixpointQueue& inv,
-        std::vector<mlir::Operation*>& toDelete,
-        const std::vector<mlir::Value>& argValues,
-        const LocalsDomain& term,
-        mlir::Operation* opPtr) {
-  auto op = mlir::dyn_cast<mlir::python::InvokeOp>(opPtr);
-  assert(op);
-
-  auto builder(mlir::OpBuilder::atBlockEnd(opPtr->getBlock()));
-
-  std::vector<mlir::Value> returnOps;
-  inv.addSuccessors(returnOps, op.returnDest(), op.returnDestOperands(), builder, argValues, term);
-
-  std::vector<mlir::Value> exceptOps;
-  inv.addSuccessors(exceptOps, op.exceptDest(), op.exceptDestOperands(), builder, argValues, term);
-
-  mlir::ArrayAttr keywords = op.keywords() ? op.keywords().getValue() : mlir::ArrayAttr();
-
-  builder.create<mlir::python::InvokeOp>(op.getLoc(), op.callee(), op.args(),
-    keywords, returnOps, exceptOps, op.returnDest(), op.exceptDest());
-  opPtr->erase();
-}
-
-template<>
-void addOpArgs<mlir::python::ThrowOp>(
-        BlockInvariantFixpointQueue& inv,
-        std::vector<mlir::Operation*>& toDelete,
-        const std::vector<mlir::Value>& argValues,
-        const LocalsDomain& term,
-        mlir::Operation* opPtr) {
-  assert(mlir::isa<mlir::python::ThrowOp>(opPtr));
-}
-
-template<>
 void addOpArgs<mlir::func::ReturnOp>(
         BlockInvariantFixpointQueue& inv,
         std::vector<mlir::Operation*>& toDelete,
@@ -320,16 +242,6 @@ using TermSubstFn = std::function<void(
 using TermSubstFnMap = llvm::DenseMap<llvm::StringRef, TermSubstFn>;
 
 template<typename T>
-static void addUnaryOp(TermSubstFnMap& m) {
-  m.try_emplace(T::getOperationName(), &addUnaryOpArgs<T>);
-}
-
-template<typename T>
-static void addBinOp(TermSubstFnMap& m) {
-  m.try_emplace(T::getOperationName(), &addBinOpArgs<T>);
-}
-
-template<typename T>
 static void addOp(TermSubstFnMap& m) {
   m.try_emplace(T::getOperationName(), &addOpArgs<T>);
 }
@@ -345,33 +257,7 @@ TermSubstFnMap mkTermMap(void) {
   addOp<mlir::cf::BranchOp>(termFns);
   addOp<mlir::cf::CondBranchOp>(termFns);
   addOp<mlir::func::ReturnOp>(termFns);
-  addOp<mlir::python::InvokeOp>(termFns);
   addOp<mlir::python::RetBranchOp>(termFns);
-  addOp<mlir::python::ThrowOp>(termFns);
-  addUnaryOp<mlir::python::InvertOp>(termFns);
-  addBinOp<mlir::python::AddOp>(termFns);
-  addBinOp<mlir::python::BitAndOp>(termFns);
-  addBinOp<mlir::python::BitOrOp>(termFns);
-  addBinOp<mlir::python::BitXorOp>(termFns);
-  addBinOp<mlir::python::DivOp>(termFns);
-  addBinOp<mlir::python::FloorDivOp>(termFns);
-  addBinOp<mlir::python::LShiftOp>(termFns);
-  addBinOp<mlir::python::ModOp>(termFns);
-  addBinOp<mlir::python::MultOp>(termFns);
-  addBinOp<mlir::python::MatMultOp>(termFns);
-  addBinOp<mlir::python::PowOp>(termFns);
-  addBinOp<mlir::python::RShiftOp>(termFns);
-  addBinOp<mlir::python::SubOp>(termFns);
-  addBinOp<mlir::python::EqOp>(termFns);
-  addBinOp<mlir::python::GtOp>(termFns);
-  addBinOp<mlir::python::GtEOp>(termFns);
-  addBinOp<mlir::python::InOp>(termFns);
-  addBinOp<mlir::python::IsOp>(termFns);
-  addBinOp<mlir::python::IsNotOp>(termFns);
-  addBinOp<mlir::python::LtOp>(termFns);
-  addBinOp<mlir::python::LtEOp>(termFns);
-  addBinOp<mlir::python::NotEqOp>(termFns);
-  addBinOp<mlir::python::NotInOp>(termFns);
   return termFns;
 }
 
@@ -444,7 +330,7 @@ void optimizeBlock(BlockInvariantFixpointQueue& inv,
 static
 void optimizeFunction(mlir::MLIRContext* ctx,
                       mlir::DominanceInfo& domInfo,
-                      mlir::FuncOp fun) {
+                      mlir::func::FuncOp fun) {
 
   FunctionValueTransitionMap fvtm(fun, domInfo);
 
@@ -507,11 +393,11 @@ void PythonLoadStoreOptimization::runOnOperation() {
 
   // Get the current func::FuncOp operation being operated on.
   mlir::ModuleOp m = getOperation();
-  auto& r = m.body();
+  ::mlir::Region& r = m.getBodyRegion();
   for (auto iBlock = r.begin(); iBlock != r.end(); ++iBlock) {
     for (auto iOp = iBlock->begin(); iOp != iBlock->end(); ++iOp) {
       auto& op = *iOp;
-      if (auto funOp = mlir::dyn_cast<mlir::FuncOp>(op)) {
+      if (auto funOp = mlir::dyn_cast<mlir::func::FuncOp>(op)) {
         optimizeFunction(ctx, domInfo, funOp);
       }
     }

@@ -6,6 +6,7 @@
 #define MLIR_DIALECT_PYTHON_IR_PYTHONTYPES
 
 include "Python/PythonDialect.td"
+include "mlir/IR/AttrTypeBase.td"
 
 class Python_Type<string name, string typeMnemonic>
     : TypeDef<Python_Dialect, name, [], "::mlir::python::PythonType"> {

@@ -3,13 +3,13 @@ get_property(conversion_libs GLOBAL PROPERTY MLIR_CONVERSION_LIBS)
 set(LIBS
         ${dialect_libs}
         ${conversion_libs}
+#        MLIRArithmetic
         MLIROptLib
         MLIRPython
         )
-add_llvm_executable(script-opt script-opt.cpp)
+add_llvm_executable(detect-flow detect-flow.cpp)
 
-llvm_update_compile_flags(script-opt)
-target_link_libraries(script-opt PRIVATE ${LIBS})
+llvm_update_compile_flags(detect-flow)
+target_link_libraries(detect-flow PRIVATE ${LIBS})
 
-mlir_check_all_link_libraries(script-opt)
-install(TARGETS script-opt)
+mlir_check_all_link_libraries(detect-flow)

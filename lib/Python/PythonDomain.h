@@ -1,5 +1,5 @@
 #pragma once
-#include <mlir/Parser.h>
+//#include <mlir/Parser.h>
 #include <mlir/InitAllDialects.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Pass/Pass.h>
@@ -38,7 +38,10 @@ public:
   // (defined when type == VALUE)
   mlir::Value value;
   // Name of builtin or module
-  // (defined when `type == BUILTIN || type == MODULE`).
+  // (defined when `type == BUILTIN).
+  mlir::python::Builtin builtin;
+  // Name of builtin or module
+  // (defined when `type == MODULE`).
   llvm::StringRef name;
   // Index of argument
   unsigned argument;
@@ -51,7 +54,7 @@ public:
         ID.AddPointer(value.getImpl());
         break;
       case BUILTIN:
-        ID.AddString(name);
+        ID.AddInteger(static_cast<uint32_t>(builtin));
         break;
       case MODULE:
         ID.AddString(name);
@@ -68,8 +71,8 @@ public:
   }
 
   static
-  ValueDomain make_builtin(llvm::StringRef name) {
-    return { .type = BUILTIN, .name = name };
+  ValueDomain make_builtin(mlir::python::Builtin builtin) {
+    return { .type = BUILTIN, .builtin = builtin };
   }
 
   static
@@ -90,7 +93,7 @@ public:
       return value;
     case BUILTIN:
       {
-        auto b = builder.create<mlir::python::Builtin>(location, name);
+        auto b = builder.create<mlir::python::BuiltinOp>(location, builtin);
         return b.result();
       }
     case MODULE:
@@ -116,7 +119,7 @@ bool operator==(const ValueDomain& x, const ValueDomain& y) {
   case ValueDomain::VALUE:
     return x.value == y.value;
   case ValueDomain::BUILTIN:
-    return x.name == y.name;
+    return x.builtin == y.builtin;
   case ValueDomain::MODULE:
     return x.name == y.name;
   case ValueDomain::ARGUMENT:

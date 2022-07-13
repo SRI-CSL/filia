@@ -57,9 +57,9 @@ void populateInheritedValues(mlir::DominanceInfo& domInfo,
   }
 }
 
-FunctionValueTransitionMap::FunctionValueTransitionMap(mlir::FuncOp fun, mlir::DominanceInfo& domInfo) {
+FunctionValueTransitionMap::FunctionValueTransitionMap(mlir::func::FuncOp fun, mlir::DominanceInfo& domInfo) {
 
-  ::mlir::Region* body = &fun.body();
+  auto body = &fun.getBody();
   populateDefinedValues(definedValues, body);
   populateInheritedValues(domInfo, inheritedValues, definedValues, body);
 
@@ -70,34 +70,6 @@ FunctionValueTransitionMap::FunctionValueTransitionMap(mlir::FuncOp fun, mlir::D
 
     auto opPtr = &blk->back();
     if (add_call_edges<mlir::python::RetBranchOp>(s, opPtr)) {
-    } else if (add_call_edges<mlir::python::InvokeOp>(s, opPtr)) {
-    } else if (add_call_edges<mlir::python::InvertOp>(s, opPtr)) {
-    } else if (add_call_edges<mlir::python::NotOp>(s, opPtr)) {
-    } else if (add_call_edges<mlir::python::UAddOp>(s, opPtr)) {
-    } else if (add_call_edges<mlir::python::USubOp>(s, opPtr)) {
-    } else if (add_call_edges<mlir::python::AddOp>(s, opPtr)) {
-    } else if (add_call_edges<mlir::python::BitAndOp>(s, opPtr)) {
-    } else if (add_call_edges<mlir::python::BitOrOp>(s, opPtr)) {
-    } else if (add_call_edges<mlir::python::BitXorOp>(s, opPtr)) {
-    } else if (add_call_edges<mlir::python::DivOp>(s, opPtr)) {
-    } else if (add_call_edges<mlir::python::FloorDivOp>(s, opPtr)) {
-    } else if (add_call_edges<mlir::python::LShiftOp>(s, opPtr)) {
-    } else if (add_call_edges<mlir::python::ModOp>(s, opPtr)) {
-    } else if (add_call_edges<mlir::python::MultOp>(s, opPtr)) {
-    } else if (add_call_edges<mlir::python::MatMultOp>(s, opPtr)) {
-    } else if (add_call_edges<mlir::python::PowOp>(s, opPtr)) {
-    } else if (add_call_edges<mlir::python::RShiftOp>(s, opPtr)) {
-    } else if (add_call_edges<mlir::python::SubOp>(s, opPtr)) {
-    } else if (add_call_edges<mlir::python::EqOp>(s, opPtr)) {
-    } else if (add_call_edges<mlir::python::GtOp>(s, opPtr)) {
-    } else if (add_call_edges<mlir::python::GtEOp>(s, opPtr)) {
-    } else if (add_call_edges<mlir::python::InOp>(s, opPtr)) {
-    } else if (add_call_edges<mlir::python::IsOp>(s, opPtr)) {
-    } else if (add_call_edges<mlir::python::IsNotOp>(s, opPtr)) {
-    } else if (add_call_edges<mlir::python::LtOp>(s, opPtr)) {
-    } else if (add_call_edges<mlir::python::LtEOp>(s, opPtr)) {
-    } else if (add_call_edges<mlir::python::NotEqOp>(s, opPtr)) {
-    } else if (add_call_edges<mlir::python::NotInOp>(s, opPtr)) {
     } else if (auto op = mlir::dyn_cast<mlir::cf::BranchOp>(opPtr)) {
       addSuccessorEdge(s, 0, op.getDest(), op.getDestOperandsMutable());
     } else if (auto op = mlir::dyn_cast<mlir::cf::CondBranchOp>(opPtr)) {

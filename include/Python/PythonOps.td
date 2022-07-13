@@ -5,40 +5,22 @@
 #define PYTHON_OPS
 
 include "Python/PythonTypes.td"
+include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/IR/EnumAttr.td"
 include "mlir/IR/OpBase.td"
 
-class Python_UnaryOp<string mnemonic> :
-        Python_Op<mnemonic, [AttrSizedOperandSegments,Terminator]> {
-    let arguments = (ins Python_Value: $arg,
-                         Variadic<AnyType>:$returnDestOperands,
-                         Variadic<AnyType>:$exceptDestOperands
-                     );
-    let successors = (successor AnySuccessor:$returnDest, AnySuccessor:$exceptDest);
-    let assemblyFormat = [{
-      $arg `,`
-      $returnDest (`(` $returnDestOperands^ `:` type($returnDestOperands) `)`)? `,`
-      $exceptDest (`(` $exceptDestOperands^ `:` type($exceptDestOperands) `)`)?
-      attr-dict
-    }];
+class Python_UnaryOp<string mnemonic> : Python_Op<mnemonic, []> {
+    let arguments = (ins Python_Value: $arg);
+    let results = (outs Python_ReturnValue:$result);
+    let assemblyFormat = "$arg attr-dict `:` type($result)";
 }
 
-class Python_BinOp<string mnemonic> :
-        Python_Op<mnemonic, [AttrSizedOperandSegments,Terminator]> {
-    let arguments = (ins Python_Value: $lhs,
-                         Python_Value: $rhs,
-                         Variadic<AnyType>:$returnDestOperands,
-                         Variadic<AnyType>:$exceptDestOperands
-                     );
-    let successors = (successor AnySuccessor:$returnDest, AnySuccessor:$exceptDest);
-    let assemblyFormat = [{
-      $lhs `,` $rhs `,`
-      $returnDest (`(` $returnDestOperands^ `:` type($returnDestOperands) `)`)? `,`
-      $exceptDest (`(` $exceptDestOperands^ `:` type($exceptDestOperands) `)`)?
-      attr-dict
-    }];
+class Python_BinOp<string mnemonic> : Python_Op<mnemonic, []> {
+    let arguments = (ins Python_Value: $lhs, Python_Value: $rhs);
+    let results = (outs Python_ReturnValue:$result);
+    let assemblyFormat = "$lhs `,` $rhs attr-dict `:` type($result)";
 }
 
 // Unary operators
@@ -74,81 +56,81 @@ def Python_LtEOp   : Python_BinOp<"lte">;
 def Python_NotEqOp : Python_BinOp<"not_eq">;
 def Python_NotInOp : Python_BinOp<"not_in">;
 
-def Python_BuiltinAttr : StrEnumAttr<"BuiltinAttr", "", [
-        StrEnumAttrCase<"abs">,
-        StrEnumAttrCase<"aiter">,
-        StrEnumAttrCase<"all">,
-        StrEnumAttrCase<"any">,
-        StrEnumAttrCase<"anext">,
-        StrEnumAttrCase<"ascii">,
-        StrEnumAttrCase<"bin">,
-        StrEnumAttrCase<"bool_builtin">,
-        StrEnumAttrCase<"breakpoint">,
-        StrEnumAttrCase<"bytearray">,
-        StrEnumAttrCase<"bytes">,
-        StrEnumAttrCase<"callable">,
-        StrEnumAttrCase<"chr">,
-        StrEnumAttrCase<"classmethod">,
-        StrEnumAttrCase<"compile">,
-        StrEnumAttrCase<"complex">,
-        StrEnumAttrCase<"delattr">,
-        StrEnumAttrCase<"dict">,
-        StrEnumAttrCase<"dir">,
-        StrEnumAttrCase<"divmod">,
-        StrEnumAttrCase<"enumerate">,
-        StrEnumAttrCase<"eval">,
-        StrEnumAttrCase<"exec">,
-        StrEnumAttrCase<"filter">,
-        StrEnumAttrCase<"float_builtin">,
-        StrEnumAttrCase<"format">,
-        StrEnumAttrCase<"frozenset">,
-        StrEnumAttrCase<"getattr">,
-        StrEnumAttrCase<"globals">,
-        StrEnumAttrCase<"hasattr">,
-        StrEnumAttrCase<"hash">,
-        StrEnumAttrCase<"help">,
-        StrEnumAttrCase<"hex">,
-        StrEnumAttrCase<"id">,
-        StrEnumAttrCase<"input">,
-        StrEnumAttrCase<"int_builtin">,
-        StrEnumAttrCase<"isinstance">,
-        StrEnumAttrCase<"issubclass">,
-        StrEnumAttrCase<"iter">,
-        StrEnumAttrCase<"len">,
-        StrEnumAttrCase<"list">,
-        StrEnumAttrCase<"locals">,
-        StrEnumAttrCase<"map">,
-        StrEnumAttrCase<"max">,
-        StrEnumAttrCase<"memoryview">,
-        StrEnumAttrCase<"min">,
-        StrEnumAttrCase<"next">,
-        StrEnumAttrCase<"object">,
-        StrEnumAttrCase<"oct">,
-        StrEnumAttrCase<"open">,
-        StrEnumAttrCase<"ord">,
-        StrEnumAttrCase<"pow">,
-        StrEnumAttrCase<"print">,
-        StrEnumAttrCase<"property">,
-        StrEnumAttrCase<"range">,
-        StrEnumAttrCase<"repr">,
-        StrEnumAttrCase<"reversed">,
-        StrEnumAttrCase<"round">,
-        StrEnumAttrCase<"scriptmain">,
-        StrEnumAttrCase<"set">,
-        StrEnumAttrCase<"setattr">,
-        StrEnumAttrCase<"slice">,
-        StrEnumAttrCase<"sorted">,
-        StrEnumAttrCase<"staticmethod">,
-        StrEnumAttrCase<"str">,
-        StrEnumAttrCase<"sum">,
-        StrEnumAttrCase<"super">,
-        StrEnumAttrCase<"tuple">,
-        StrEnumAttrCase<"type">,
-        StrEnumAttrCase<"vars">,
-        StrEnumAttrCase<"zip">,
-        StrEnumAttrCase<"import">
+def Python_BuiltinAttr : I32EnumAttr<"Builtin", "", [
+        I32EnumAttrCase<"abs", 0>,
+        I32EnumAttrCase<"aiter", 1>,
+        I32EnumAttrCase<"all", 2>,
+        I32EnumAttrCase<"any", 3>,
+        I32EnumAttrCase<"anext", 4>,
+        I32EnumAttrCase<"ascii", 5>,
+        I32EnumAttrCase<"bin", 6>,
+        I32EnumAttrCase<"bool_builtin", 7>,
+        I32EnumAttrCase<"breakpoint", 8>,
+        I32EnumAttrCase<"bytearray", 9>,
+        I32EnumAttrCase<"bytes", 10>,
+        I32EnumAttrCase<"callable", 11>,
+        I32EnumAttrCase<"chr", 12>,
+        I32EnumAttrCase<"classmethod", 13>,
+        I32EnumAttrCase<"compile", 14>,
+        I32EnumAttrCase<"complex", 15>,
+        I32EnumAttrCase<"delattr", 16>,
+        I32EnumAttrCase<"dict", 17>,
+        I32EnumAttrCase<"dir", 18>,
+        I32EnumAttrCase<"divmod", 19>,
+        I32EnumAttrCase<"enumerate", 20>,
+        I32EnumAttrCase<"eval", 21>,
+        I32EnumAttrCase<"exec", 22>,
+        I32EnumAttrCase<"filter", 23>,
+        I32EnumAttrCase<"float_builtin", 24>,
+        I32EnumAttrCase<"format", 25>,
+        I32EnumAttrCase<"frozenset", 26>,
+        I32EnumAttrCase<"getattr", 27>,
+        I32EnumAttrCase<"globals", 28>,
+        I32EnumAttrCase<"hasattr", 29>,
+        I32EnumAttrCase<"hash", 30>,
+        I32EnumAttrCase<"help", 31>,
+        I32EnumAttrCase<"hex", 32>,
+        I32EnumAttrCase<"id", 33>,
+        I32EnumAttrCase<"import", 34>,
+        I32EnumAttrCase<"input", 35>,
+        I32EnumAttrCase<"int_builtin", 36>,
+        I32EnumAttrCase<"isinstance", 37>,
+        I32EnumAttrCase<"issubclass", 38>,
+        I32EnumAttrCase<"iter", 39>,
+        I32EnumAttrCase<"len", 40>,
+        I32EnumAttrCase<"list", 41>,
+        I32EnumAttrCase<"locals", 42>,
+        I32EnumAttrCase<"map", 43>,
+        I32EnumAttrCase<"max", 44>,
+        I32EnumAttrCase<"memoryview", 45>,
+        I32EnumAttrCase<"min", 46>,
+        I32EnumAttrCase<"next", 47>,
+        I32EnumAttrCase<"object", 48>,
+        I32EnumAttrCase<"oct", 49>,
+        I32EnumAttrCase<"open", 50>,
+        I32EnumAttrCase<"ord", 51>,
+        I32EnumAttrCase<"pow", 52>,
+        I32EnumAttrCase<"print", 53>,
+        I32EnumAttrCase<"property", 54>,
+        I32EnumAttrCase<"range", 55>,
+        I32EnumAttrCase<"repr", 56>,
+        I32EnumAttrCase<"reversed", 57>,
+        I32EnumAttrCase<"round", 58>,
+        I32EnumAttrCase<"scriptmain", 59>,
+        I32EnumAttrCase<"set", 60>,
+        I32EnumAttrCase<"setattr", 61>,
+        I32EnumAttrCase<"slice", 62>,
+        I32EnumAttrCase<"sorted", 63>,
+        I32EnumAttrCase<"staticmethod", 64>,
+        I32EnumAttrCase<"str", 65>,
+        I32EnumAttrCase<"sum", 66>,
+        I32EnumAttrCase<"super", 67>,
+        I32EnumAttrCase<"tuple", 68>,
+        I32EnumAttrCase<"type", 69>,
+        I32EnumAttrCase<"vars", 70>,
+        I32EnumAttrCase<"zip", 71>
     ]> {
-    let cppNamespace = "::mlir::python";
+  let cppNamespace = "::mlir::python";
 }
 
 def Python_NoneOp : Python_Op<"none", [NoSideEffect]> {
@@ -190,7 +172,7 @@ def Python_ArraySet : Python_Op<"array_set", []> {
     let assemblyFormat = "$array $index $value attr-dict";
 }
 
-def Python_Builtin : Python_Op<"builtin", [NoSideEffect]> {
+def Python_BuiltinOp : Python_Op<"builtin", [NoSideEffect]> {
     let summary = "A reference to a builtin function.";
     let description = [{
         FIXME
@@ -256,36 +238,17 @@ def Python_GetMethod : Python_Op<"getmethod", []> {
     let assemblyFormat = "$obj `,` $method attr-dict `:` type($result)";
 }
 
-def Python_InvokeOp : Python_Op<"invoke", [
-      AttrSizedOperandSegments,Terminator
-    ]> {
+def Python_InvokeOp : Python_Op<"invoke", []> {
     let summary = "Invoke a Python method";
     let description = [{
         Operation that invokes a Python method
     }];
     let arguments = (ins Python_Value:$callee,
                      Variadic<Python_Value>:$args,
-                     OptionalAttr<ArrayAttr>:$keywords,
-                     Variadic<AnyType>:$returnDestOperands,
-                     Variadic<AnyType>:$exceptDestOperands
+                     OptionalAttr<ArrayAttr>:$keywords
                      );
-
-    let successors = (successor AnySuccessor:$returnDest, AnySuccessor:$exceptDest);
-    let assemblyFormat = [{
-      $callee `(` $args `)` `,`
-      $returnDest (`(` $returnDestOperands^ `:` type($returnDestOperands) `)`)? `,`
-      $exceptDest (`(` $exceptDestOperands^ `:` type($exceptDestOperands) `)`)?
-      attr-dict
-    }];
-}
-
-def Python_ThrowOp : Python_Op<"throw", [Terminator]> {
-    let summary = "Throw a Python exception.";
-    let description = [{
-        Operation that invokes a Python method
-    }];
-    let arguments = (ins Python_Value:$except);
-    let assemblyFormat = "$except attr-dict";
+    let results = (outs Python_ReturnValue:$result);
+    let assemblyFormat = "$callee `(` $args `)` `,` attr-dict `:` type($result)";
 }
 
 def Python_IsInstance : Python_Op<"isinstance", [NoSideEffect]> {
@@ -401,7 +364,11 @@ def Python_MkExceptOp : Python_Op<"mk_except", [NoSideEffect]> {
     let assemblyFormat = "$value `,` $traceback attr-dict `:` type($result)";
 }
 
-def Python_RetBranchOp : Python_Op<"ret_branch", [AttrSizedOperandSegments,Terminator]> {
+def Python_RetBranchOp : Python_Op<"ret_branch", [
+        AttrSizedOperandSegments,
+        DeclareOpInterfaceMethods<BranchOpInterface, ["getSuccessorForOperands"]>,
+        NoSideEffect,
+        Terminator]> {
     let summary = "Jump to one block or another due to a return.";
     let arguments = (ins Python_ReturnValue:$value,
                      Variadic<AnyType>:$returnDestOperands,
@@ -414,6 +381,10 @@ def Python_RetBranchOp : Python_Op<"ret_branch", [AttrSizedOperandSegments,Termi
       $exceptDest (`(` $exceptDestOperands^ `:` type($exceptDestOperands) `)`)?
       attr-dict
     }];
+  let extraClassDeclaration = [{
+    // These are the indices into the dests list.
+    enum { returnIndex = 0, exceptIndex = 1 };
+  }];
 }
 
 // Cell operators

@@ -94,7 +94,6 @@ jobs:
       if: steps.cache-llvm.outputs.cache-hit != 'true' && matrix.os == 'macos-11'
     - name: Configure LLVM
       run: |
-        ls -l ./deps
         EXTRA_ARGS="-DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ ${{matrix.llvm-args}}" ./deps/configure-llvm.sh
       if: steps.cache-llvm.outputs.cache-hit != 'true'
     - name: Build LLVM

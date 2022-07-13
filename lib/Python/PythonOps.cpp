@@ -9,3 +9,28 @@
 #include "Python/PythonOps.cpp.inc"
 
 #include "Python/PythonOpsEnums.cpp.inc"
+
+namespace mlir {
+namespace python {
+
+Block* RetBranchOp::getSuccessorForOperands(ArrayRef<Attribute> operands) {
+  return nullptr;
+}
+
+/*
+Optional<MutableOperandRange> RetBranchOp::getMutableSuccessorOperands(unsigned index) {
+  assert(index < getNumSuccessors() && "invalid successor index");
+  return index == returnIndex ? returnDestOperandsMutable()
+                              : exceptDestOperandsMutable();
+}
+*/
+
+SuccessorOperands RetBranchOp::getSuccessorOperands(unsigned index) {
+  assert(index < getNumSuccessors() && "invalid successor index");
+  return index == returnIndex
+          ? SuccessorOperands(1, returnDestOperandsMutable())
+          : SuccessorOperands(2, exceptDestOperandsMutable());
+}
+
+}
+}

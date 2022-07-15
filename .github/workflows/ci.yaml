@@ -36,6 +36,7 @@ jobs:
           llvm-args: -DLLVM_USE_LINKER=lld
         - name: MacOS
           os: macos-11
+          env: LDFLAGS=-L/usr/local/lib
 #        - name: Windows
 #          os: windows-2022
 #          shell: msys2 {0}
@@ -94,14 +95,15 @@ jobs:
       if: steps.cache-llvm.outputs.cache-hit != 'true' && matrix.os == 'macos-11'
     - name: Configure LLVM
       run: |
-        EXTRA_ARGS="-DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ ${{matrix.llvm-args}}" ./deps/configure-llvm.sh
+        ${{matrix.env}} EXTRA_ARGS="-DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ ${{matrix.llvm-args}}" ./deps/configure-llvm.sh
       if: steps.cache-llvm.outputs.cache-hit != 'true'
     - name: Build LLVM
       run: cmake --build deps/llvm-build --target install
       if: steps.cache-llvm.outputs.cache-hit != 'true'
     - name: Configure
       run: |
-        cmake -S . -B build/debug -DMLIR_DIR=deps/llvm-install/lib/cmake/mlir \
+        ${{matrix.env}} cmake -S . -B build/debug \
+           -DMLIR_DIR=deps/llvm-install/lib/cmake/mlir \
            -DCMAKE_BUILD_TYPE=Debug \
            -DCMAKE_INSTALL_PREFIX=dist/debug
     - name: Build

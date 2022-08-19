@@ -248,7 +248,7 @@ def Python_InvokeOp : Python_Op<"invoke", []> {
                      OptionalAttr<ArrayAttr>:$keywords
                      );
     let results = (outs Python_ReturnValue:$result);
-    let assemblyFormat = "$callee `(` $args `)` `,` attr-dict `:` type($result)";
+    let assemblyFormat = "$callee `(` $args `)` attr-dict `:` type($result)";
 }
 
 def Python_IsInstance : Python_Op<"isinstance", [NoSideEffect]> {

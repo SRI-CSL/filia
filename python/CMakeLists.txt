@@ -45,6 +45,7 @@ add_mlir_python_common_capi_library(PythonPythonCAPI
     PythonDialectSources
     MLIRPythonSources.Core
 )
+target_compile_features(PythonPythonCAPI PRIVATE cxx_std_17)
 
 ################################################################################
 # Instantiation of all Python modules
@@ -59,3 +60,11 @@ add_mlir_python_modules(PythonDialectModules
   COMMON_CAPI_LINK_LIBS
     PythonPythonCAPI
   )
+
+target_compile_features(PythonDialectModules.extension._mlir.dso PRIVATE cxx_std_17)
+target_compile_features(PythonDialectModules.extension._mlirExecutionEngine.dso PRIVATE cxx_std_17)
+target_compile_features(PythonDialectModules.extension._mlirDialectsLinalg.dso PRIVATE cxx_std_17)
+target_compile_features(PythonDialectModules.extension._mlirDialectsPDL.dso PRIVATE cxx_std_17)
+target_compile_features(PythonDialectModules.extension._mlirDialectsQuant.dso PRIVATE cxx_std_17)
+target_compile_features(PythonDialectModules.extension._mlirDialectsSparseTensor.dso PRIVATE cxx_std_17)
+target_compile_features(PythonDialectModules.extension._pythonDialects.dso PRIVATE cxx_std_17)

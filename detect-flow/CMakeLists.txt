@@ -10,6 +10,7 @@ set(LIBS
 add_llvm_executable(detect-flow detect-flow.cpp)
 
 llvm_update_compile_flags(detect-flow)
+target_compile_features(detect-flow PRIVATE cxx_std_17)
 target_link_libraries(detect-flow PRIVATE ${LIBS})
 
 mlir_check_all_link_libraries(detect-flow)

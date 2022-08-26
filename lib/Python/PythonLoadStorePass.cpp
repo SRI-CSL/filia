@@ -277,11 +277,11 @@ namespace python {
 static
 void applyBlockOps(LocalsDomain& locals, mlir::Block* block) {
   for (auto opPtr = block->begin(); opPtr != block->end(); ++opPtr) {
-    if (auto derivedOp = mlir::dyn_cast<mlir::python::CellAlloc>(opPtr)) {
+    if (auto derivedOp = mlir::dyn_cast<mlir::python::CellAllocOp>(opPtr)) {
       locals.cellAlloc(derivedOp);
-    } else if (auto derivedOp = mlir::dyn_cast<mlir::python::CellStore>(opPtr)) {
+    } else if (auto derivedOp = mlir::dyn_cast<mlir::python::CellStoreOp>(opPtr)) {
       locals.cellStore(derivedOp);
-    } else if (auto op = mlir::dyn_cast<mlir::python::CellLoad>(opPtr)) {
+    } else if (auto op = mlir::dyn_cast<mlir::python::CellLoadOp>(opPtr)) {
       // Do nothing
     }
   }
@@ -296,11 +296,11 @@ void optimizeBlock(BlockInvariantFixpointQueue& inv,
   std::vector<mlir::Operation*> toDelete;
   bool doSucc = true;
   for (auto opPtr = block->begin(); opPtr != block->end(); ++opPtr) {
-    if (auto derivedOp = mlir::dyn_cast<mlir::python::CellAlloc>(opPtr)) {
+    if (auto derivedOp = mlir::dyn_cast<mlir::python::CellAllocOp>(opPtr)) {
       locals.cellAlloc(derivedOp);
-    } else if (auto derivedOp = mlir::dyn_cast<mlir::python::CellStore>(opPtr)) {
+    } else if (auto derivedOp = mlir::dyn_cast<mlir::python::CellStoreOp>(opPtr)) {
       locals.cellStore(derivedOp);
-    } else if (auto op = mlir::dyn_cast<mlir::python::CellLoad>(opPtr)) {
+    } else if (auto op = mlir::dyn_cast<mlir::python::CellLoadOp>(opPtr)) {
       if (auto v = locals.cellLoad(op, argValues)) {
         op.result().replaceAllUsesWith(v);
         toDelete.push_back(op);

@@ -162,7 +162,7 @@ def Python_UndefinedOp : Python_Op<"undefined", [NoSideEffect]> {
     let assemblyFormat = "attr-dict `:` type($result)";
 }
 
-def Python_ArraySet : Python_Op<"array_set", []> {
+def Python_ArraySetOp : Python_Op<"array_set", []> {
     let summary = "Update array at a given index.";
     let description = [{
         FIXME
@@ -183,7 +183,7 @@ def Python_BuiltinOp : Python_Op<"builtin", [NoSideEffect]> {
     let assemblyFormat = "$val attr-dict `:` type($result)";
 }
 
-def Python_Module : Python_Op<"module", [NoSideEffect]> {
+def Python_ModuleOp : Python_Op<"module", [NoSideEffect]> {
     let summary = "A reference to an external module.";
     let description = [{
         FIXME
@@ -194,7 +194,7 @@ def Python_Module : Python_Op<"module", [NoSideEffect]> {
     let assemblyFormat = "$val attr-dict `:` type($result)";
 }
 
-def Python_S64Lit : Python_Op<"intlit", [NoSideEffect]> {
+def Python_S64LitOp : Python_Op<"intlit", [NoSideEffect]> {
     let summary = "An integer literal.";
     let description = [{
         FIXME
@@ -205,7 +205,7 @@ def Python_S64Lit : Python_Op<"intlit", [NoSideEffect]> {
     let assemblyFormat = "$val attr-dict `:` type($result)";
 }
 
-def Python_IntLit : Python_Op<"u64lit", [NoSideEffect]> {
+def Python_IntLitOp : Python_Op<"u64lit", [NoSideEffect]> {
     let summary = "An integer literal.";
     let description = [{
         FIXME
@@ -216,7 +216,7 @@ def Python_IntLit : Python_Op<"u64lit", [NoSideEffect]> {
     let assemblyFormat = "$val attr-dict `:` type($result)";
 }
 
-def Python_StrLit : Python_Op<"strlit", [NoSideEffect]> {
+def Python_StrLitOp : Python_Op<"strlit", [NoSideEffect]> {
     let summary = "A string literal.";
     let description = [{
         FIXME
@@ -227,7 +227,7 @@ def Python_StrLit : Python_Op<"strlit", [NoSideEffect]> {
     let assemblyFormat = "$val attr-dict `:` type($result)";
 }
 
-def Python_GetMethod : Python_Op<"getmethod", []> {
+def Python_GetMethodOp : Python_Op<"getmethod", []> {
     let summary = "Returns a method from a value..";
     let description = [{
         FIXME
@@ -251,7 +251,7 @@ def Python_InvokeOp : Python_Op<"invoke", []> {
     let assemblyFormat = "$callee `(` $args `)` attr-dict `:` type($result)";
 }
 
-def Python_IsInstance : Python_Op<"isinstance", [NoSideEffect]> {
+def Python_IsInstanceOp : Python_Op<"isinstance", [NoSideEffect]> {
     let summary = "Test if value matches an instance.";
     let description = [{
         Operation that test if a value is an instance.
@@ -271,7 +271,7 @@ def Python_FormattedString : Python_Op<"formattedstring", [NoSideEffect]> {
     let assemblyFormat = "`(` $args `)` attr-dict `:` type($result)";
 }
 
-def Python_List : Python_Op<"list", [NoSideEffect]> {
+def Python_ListOp : Python_Op<"list", [NoSideEffect]> {
     let summary = "Construct a list.";
     let description = [{
         Constructs a list from a list of arguments.
@@ -291,7 +291,7 @@ def Python_TupleOp : Python_Op<"tuple", [NoSideEffect]> {
     let assemblyFormat = "`(` $args `)` attr-dict `:` type($result)";
 }
 
-def Python_Truthy : Python_Op<"truthy", [NoSideEffect]> {
+def Python_TruthyOp : Python_Op<"truthy", [NoSideEffect]> {
     let summary = "Predicate that checks if a value is truthy.";
     let description = [{
         Checks if value is one considered truthy in Python
@@ -301,7 +301,7 @@ def Python_Truthy : Python_Op<"truthy", [NoSideEffect]> {
     let assemblyFormat = "$val attr-dict `:` type($result)";
 }
 
-def Python_TupleCheck : Python_Op<"tuple_check", []> {
+def Python_TupleCheckOp : Python_Op<"tuple_check", []> {
     let summary = "Predicate that checks if a value is a tuple.";
     let description = [{
         Checks if value is a tuple with the given arity.
@@ -310,7 +310,7 @@ def Python_TupleCheck : Python_Op<"tuple_check", []> {
     let assemblyFormat = "$value `,` $arity attr-dict";
 }
 
-def Python_TupleGet : Python_Op<"tuple_get", [NoSideEffect]> {
+def Python_TupleGetOp : Python_Op<"tuple_get", [NoSideEffect]> {
     let summary = "Predicate that gets a value with given index from tuple.";
     let description = [{
         Get a value from tuple (undefined if value is not a tuple or index is invalid)
@@ -330,7 +330,7 @@ def Python_TypeOp : Python_Op<"type", [NoSideEffect]> {
     let assemblyFormat = "$value attr-dict `:` type($result)";
 }
 
-def Python_FunctionRef : Python_Op<"function_ref", [NoSideEffect]> {
+def Python_FunctionRefOp : Python_Op<"function_ref", [NoSideEffect]> {
     let summary = "Create a Python value referencing a function.";
     let arguments =
         (ins SymbolRefAttr:$fun,
@@ -389,7 +389,7 @@ def Python_RetBranchOp : Python_Op<"ret_branch", [
 
 // Cell operators
 
-def Python_CellAlloc : Python_Op<"cell_alloc", [NoSideEffect]> {
+def Python_CellAllocOp : Python_Op<"cell_alloc", [NoSideEffect]> {
     let summary = "Create a cell for storing values.";
     let description = [{
         This creates a cell with an optional initial value.
@@ -400,7 +400,7 @@ def Python_CellAlloc : Python_Op<"cell_alloc", [NoSideEffect]> {
     let assemblyFormat = "$initial attr-dict `:` type($result)";
 }
 
-def Python_CellStore : Python_Op<"cell_store", []> {
+def Python_CellStoreOp : Python_Op<"cell_store", []> {
     let summary = "Stores the value in the cell.";
     let description = [{
         Stores the value in the cell.
@@ -409,7 +409,7 @@ def Python_CellStore : Python_Op<"cell_store", []> {
     let assemblyFormat = "$cell `,` $value attr-dict";
 }
 
-def Python_CellLoad : Python_Op<"cell_load", []> {
+def Python_CellLoadOp : Python_Op<"cell_load", []> {
     let summary = "Returns the value currently stored in the cell.";
     let description = [{
         Returns the value currently stored in the cell.
@@ -423,7 +423,7 @@ def Python_CellLoad : Python_Op<"cell_load", []> {
 
 // Scope operators
 
-def Python_ScopeInit : Python_Op<"scope_init", [NoSideEffect]> {
+def Python_ScopeInitOp : Python_Op<"scope_init", [NoSideEffect]> {
     let summary = "Create an empty scope.";
     let description = [{
         This creates an initial empty scope.
@@ -433,7 +433,7 @@ def Python_ScopeInit : Python_Op<"scope_init", [NoSideEffect]> {
     let assemblyFormat = "$names `(` $cells `)` attr-dict `:` type($result)";
 }
 
-def Python_ScopeExtend : Python_Op<"scope_extend", [NoSideEffect]> {
+def Python_ScopeExtendOp : Python_Op<"scope_extend", [NoSideEffect]> {
     let summary = "Create a scope that extends an existing one";
     let description = [{
         This creates an empty scope that extends a current one.
@@ -443,7 +443,7 @@ def Python_ScopeExtend : Python_Op<"scope_extend", [NoSideEffect]> {
     let assemblyFormat = "$scope $names `(` $cells `)` attr-dict `:` type($result)";
 }
 
-def Python_ScopeGet : Python_Op<"scope_get", []> {
+def Python_ScopeGetOp : Python_Op<"scope_get", []> {
     let summary = "Get value of a variable in local/global map.";
     let description = [{
         This gets a variable in the map.

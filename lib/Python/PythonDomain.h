@@ -98,7 +98,7 @@ public:
       }
     case MODULE:
       {
-        auto b = builder.create<mlir::python::Module>(location, name);
+        auto b = builder.create<mlir::python::ModuleOp>(location, name);
         return b.result();
       }
     case ARGUMENT:
@@ -230,7 +230,7 @@ public:
    *
    * @param op allocation operation.
    */
-  void cellAlloc(mlir::python::CellAlloc op) {
+  void cellAlloc(mlir::python::CellAllocOp op) {
     auto d
       = op.initial()
       ? CellDomain::value(this->valueDomain(op.initial()))
@@ -275,15 +275,15 @@ public:
    *
    * @param op allocation
    */
-  void cellStore(mlir::python::CellStore op) {
+  void cellStore(mlir::python::CellStoreOp op) {
     auto& d = cellDomain(op.cell());
     d = CellDomain::value(this->valueDomain(op.value()));
   }
 
   mlir::Value cellValue(mlir::Value cell,
-                            mlir::OpBuilder& builder,
-                            const mlir::Location& location,
-                            const std::vector<mlir::Value> &argValues) const {
+                        mlir::OpBuilder& builder,
+                        const mlir::Location& location,
+                        const std::vector<mlir::Value> &argValues) const {
 
     const auto& cd = cellDomain(cell);
     if (cd.getStatus() == CellDomain::VALUE) {
@@ -293,7 +293,7 @@ public:
     }
   }
 
-  mlir::Value cellLoad(mlir::python::CellLoad op, const std::vector<mlir::Value> &argValues) {
+  mlir::Value cellLoad(mlir::python::CellLoadOp op, const std::vector<mlir::Value> &argValues) {
     const auto& cd = cellDomain(op.cell());
     if (cd.getStatus() == CellDomain::VALUE) {
       const auto& vd = cd.getValue();

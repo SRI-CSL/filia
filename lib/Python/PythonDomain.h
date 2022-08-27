@@ -1,5 +1,5 @@
 #pragma once
-#include <mlir/Parser.h>
+//#include <mlir/Parser.h>
 #include <mlir/InitAllDialects.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Pass/Pass.h>
@@ -38,7 +38,10 @@ public:
   // (defined when type == VALUE)
   mlir::Value value;
   // Name of builtin or module
-  // (defined when `type == BUILTIN || type == MODULE`).
+  // (defined when `type == BUILTIN).
+  mlir::python::Builtin builtin;
+  // Name of builtin or module
+  // (defined when `type == MODULE`).
   llvm::StringRef name;
   // Index of argument
   unsigned argument;
@@ -51,7 +54,7 @@ public:
         ID.AddPointer(value.getImpl());
         break;
       case BUILTIN:
-        ID.AddString(name);
+        ID.AddInteger(static_cast<uint32_t>(builtin));
         break;
       case MODULE:
         ID.AddString(name);
@@ -68,8 +71,8 @@ public:
   }
 
   static
-  ValueDomain make_builtin(llvm::StringRef name) {
-    return { .type = BUILTIN, .name = name };
+  ValueDomain make_builtin(mlir::python::Builtin builtin) {
+    return { .type = BUILTIN, .builtin = builtin };
   }
 
   static
@@ -90,12 +93,12 @@ public:
       return value;
     case BUILTIN:
       {
-        auto b = builder.create<mlir::python::Builtin>(location, name);
+        auto b = builder.create<mlir::python::BuiltinOp>(location, builtin);
         return b.result();
       }
     case MODULE:
       {
-        auto b = builder.create<mlir::python::Module>(location, name);
+        auto b = builder.create<mlir::python::ModuleOp>(location, name);
         return b.result();
       }
     case ARGUMENT:
@@ -116,7 +119,7 @@ bool operator==(const ValueDomain& x, const ValueDomain& y) {
   case ValueDomain::VALUE:
     return x.value == y.value;
   case ValueDomain::BUILTIN:
-    return x.name == y.name;
+    return x.builtin == y.builtin;
   case ValueDomain::MODULE:
     return x.name == y.name;
   case ValueDomain::ARGUMENT:
@@ -227,7 +230,7 @@ public:
    *
    * @param op allocation operation.
    */
-  void cellAlloc(mlir::python::CellAlloc op) {
+  void cellAlloc(mlir::python::CellAllocOp op) {
     auto d
       = op.initial()
       ? CellDomain::value(this->valueDomain(op.initial()))
@@ -272,15 +275,15 @@ public:
    *
    * @param op allocation
    */
-  void cellStore(mlir::python::CellStore op) {
+  void cellStore(mlir::python::CellStoreOp op) {
     auto& d = cellDomain(op.cell());
     d = CellDomain::value(this->valueDomain(op.value()));
   }
 
   mlir::Value cellValue(mlir::Value cell,
-                            mlir::OpBuilder& builder,
-                            const mlir::Location& location,
-                            const std::vector<mlir::Value> &argValues) const {
+                        mlir::OpBuilder& builder,
+                        const mlir::Location& location,
+                        const std::vector<mlir::Value> &argValues) const {
 
     const auto& cd = cellDomain(cell);
     if (cd.getStatus() == CellDomain::VALUE) {
@@ -290,7 +293,7 @@ public:
     }
   }
 
-  mlir::Value cellLoad(mlir::python::CellLoad op, const std::vector<mlir::Value> &argValues) {
+  mlir::Value cellLoad(mlir::python::CellLoadOp op, const std::vector<mlir::Value> &argValues) {
     const auto& cd = cellDomain(op.cell());
     if (cd.getStatus() == CellDomain::VALUE) {
       const auto& vd = cd.getValue();

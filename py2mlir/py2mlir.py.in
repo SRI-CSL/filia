@@ -3,13 +3,11 @@
 from __future__ import annotations
 import ast
 import sys
-import logging
-from typing import Dict
+from typing import Callable, Dict
 
-sys.path.insert(0, "@CONFIG_PY_DIR@")
+sys.path.insert(0, @CONFIG_PY_DIR@)
 import mlir_python.ir as mlir
 from mlir_python.dialects import (
-  builtin as builtin_d,
   cf as cf_d,
   func as func_d,
   python as python_d
@@ -18,7 +16,7 @@ from mlir_python.dialects import (
 # Set value stored in cell.
 def cell_store(block: mlir.Block, cell: mlir.Value, value: mlir.Value):
     with mlir.InsertionPoint(block):
-        python_d.CellStore(cell, value)
+        python_d.CellStoreOp(cell, value)
 
 # invoke_next(next, nextBlock, doneBlock, throwBlock) invokes the next method and returns
 # a pair (bodyBlock, value) where:
@@ -36,112 +34,128 @@ def invoke_next(next: mlir.Value, curBlock: mlir.Block, doneBlock: mlir.Block, t
         cf_d.BranchOp([], nextBlock)
 
     bodyBlock   = nextBlock.create_after(valueType)
-    exceptBlock = nextBlock.create_after(valueType)
+    exceptBlock = nextBlock.create_after(valueType, valueType)
 
     with mlir.InsertionPoint(nextBlock):
-        python_d.InvokeOp(next, [], None, [], [], bodyBlock, exceptBlock)
+        python_d.RetBranchOp(python_d.InvokeOp(next, []), [], [], bodyBlock, exceptBlock)
 
-    exception   = exceptBlock.arguments[0]
+    e  = exceptBlock.arguments[0]
+    tb = exceptBlock.arguments[1]
+
+
     with mlir.InsertionPoint(exceptBlock):
-        c = python_d.IsInstance(exception, mlir.StringAttr.get("StopIteration"))
-        cf_d.CondBranchOp(c, [], [exception], doneBlock, throwBlock)
+        c = python_d.IsInstanceOp(e, mlir.StringAttr.get("StopIteration"))
+        cf_d.CondBranchOp(c, [], [e, tb], doneBlock, throwBlock)
 
     return nextBlock, bodyBlock, bodyBlock.arguments[0]
 
 # Return the none vlaue
 def truthy(block: mlir.Block, x: mlir.Value) -> mlir.Value:
     with mlir.InsertionPoint(block):
-        return python_d.Truthy(x)
+        return python_d.TruthyOp(x)
+
 
 class BuiltinSet:
     def __init__(self,):
         self._builtins = {}
         self.addBuiltins()
 
-    def addBuiltin(self, mlirName: str, pyName=None):
-        name = pyName if pyName != None else mlirName
-        self._builtins[name] = mlirName
+    def addBuiltin(self, pyName: str, idx: int, mlirName=None):
+        self._builtins[pyName] = idx
 
     def addBuiltins(self):
-        self.addBuiltin("abs")
-        self.addBuiltin("aiter")
-        self.addBuiltin("all")
-        self.addBuiltin("any")
-        self.addBuiltin("anext")
-        self.addBuiltin("ascii")
-        self.addBuiltin("bin")
-        self.addBuiltin("bool_builtin", "bool")
-        self.addBuiltin("breakpoint")
-        self.addBuiltin("bytearray")
-        self.addBuiltin("bytes")
-        self.addBuiltin("callable")
-        self.addBuiltin("chr")
-        self.addBuiltin("classmethod")
-        self.addBuiltin("compile")
-        self.addBuiltin("complex")
-        self.addBuiltin("delattr")
-        self.addBuiltin("dict")
-        self.addBuiltin("dir")
-        self.addBuiltin("divmod")
-        self.addBuiltin("enumerate")
-        self.addBuiltin("eval")
-        self.addBuiltin("exec")
-        self.addBuiltin("filter")
-        self.addBuiltin("float_builtin", "float")
-        self.addBuiltin("format")
-        self.addBuiltin("frozenset")
-        self.addBuiltin("getattr")
-        self.addBuiltin("globals")
-        self.addBuiltin("hasattr")
-        self.addBuiltin("hash")
-        self.addBuiltin("help")
-        self.addBuiltin("hex")
-        self.addBuiltin("id")
-        self.addBuiltin("input")
-        self.addBuiltin("int_builtin", "int")
-        self.addBuiltin("isinstance")
-        self.addBuiltin("issubclass")
-        self.addBuiltin("iter")
-        self.addBuiltin("len")
-        self.addBuiltin("list")
-        self.addBuiltin("locals")
-        self.addBuiltin("map")
-        self.addBuiltin("max")
-        self.addBuiltin("memoryview")
-        self.addBuiltin("min")
-        self.addBuiltin("next")
-        self.addBuiltin("object")
-        self.addBuiltin("oct")
-        self.addBuiltin("open")
-        self.addBuiltin("ord")
-        self.addBuiltin("pow")
-        self.addBuiltin("print")
-        self.addBuiltin("property")
-        self.addBuiltin("range")
-        self.addBuiltin("repr")
-        self.addBuiltin("reversed")
-        self.addBuiltin("round")
-        self.addBuiltin("set")
-        self.addBuiltin("setattr")
-        self.addBuiltin("slice")
-        self.addBuiltin("sorted")
-        self.addBuiltin("staticmethod")
-        self.addBuiltin("str")
-        self.addBuiltin("sum")
-        self.addBuiltin("super")
-        self.addBuiltin("tuple")
-        self.addBuiltin("type")
-        self.addBuiltin("vars")
-        self.addBuiltin("zip")
-        self.addBuiltin("import", "__import__")
-        self.addBuiltin("scriptmain", "__name__")
+        self.addBuiltin("abs", 0)
+        self.addBuiltin("aiter", 1)
+        self.addBuiltin("all", 2)
+        self.addBuiltin("any", 3)
+        self.addBuiltin("anext", 4)
+        self.addBuiltin("ascii", 5)
+        self.addBuiltin("bin", 6)
+        self.addBuiltin("bool", 7, "bool_builtin")
+        self.addBuiltin("breakpoint", 8)
+        self.addBuiltin("bytearray", 9)
+        self.addBuiltin("bytes", 10)
+        self.addBuiltin("callable", 11)
+        self.addBuiltin("chr", 12)
+        self.addBuiltin("classmethod", 13)
+        self.addBuiltin("compile", 14)
+        self.addBuiltin("complex", 15)
+        self.addBuiltin("delattr", 16)
+        self.addBuiltin("dict", 17)
+        self.addBuiltin("dir", 18)
+        self.addBuiltin("divmod", 19)
+        self.addBuiltin("enumerate", 20)
+        self.addBuiltin("eval", 21)
+        self.addBuiltin("exec", 22)
+        self.addBuiltin("filter", 23)
+        self.addBuiltin("float", 24, "float_builtin")
+        self.addBuiltin("format", 25)
+        self.addBuiltin("frozenset", 26)
+        self.addBuiltin("getattr", 27)
+        self.addBuiltin("globals", 28)
+        self.addBuiltin("hasattr", 29)
+        self.addBuiltin("hash", 30)
+        self.addBuiltin("help", 31)
+        self.addBuiltin("hex", 32)
+        self.addBuiltin("id", 33)
+        self.addBuiltin("__import__", 34, "import")
+        self.addBuiltin("input", 35)
+        self.addBuiltin("int", 36, "int_builtin")
+        self.addBuiltin("isinstance", 37)
+        self.addBuiltin("issubclass", 38)
+        self.addBuiltin("iter", 39)
+        self.addBuiltin("len", 40)
+        self.addBuiltin("list", 41)
+        self.addBuiltin("locals", 42)
+        self.addBuiltin("map", 43)
+        self.addBuiltin("max", 44)
+        self.addBuiltin("memoryview", 45)
+        self.addBuiltin("min", 46)
+        self.addBuiltin("next", 47)
+        self.addBuiltin("object", 48)
+        self.addBuiltin("oct", 49)
+        self.addBuiltin("open", 50)
+        self.addBuiltin("ord", 51)
+        self.addBuiltin("pow", 52)
+        self.addBuiltin("print", 53)
+        self.addBuiltin("property", 54)
+        self.addBuiltin("range", 55)
+        self.addBuiltin("repr", 56)
+        self.addBuiltin("reversed", 57)
+        self.addBuiltin("round", 58)
+        self.addBuiltin("__name__", 59, "scriptmain")
+        self.addBuiltin("set", 60)
+        self.addBuiltin("setattr", 61)
+        self.addBuiltin("slice", 62)
+        self.addBuiltin("sorted", 63)
+        self.addBuiltin("staticmethod", 64)
+        self.addBuiltin("str", 65)
+        self.addBuiltin("sum", 66)
+        self.addBuiltin("super", 67)
+        self.addBuiltin("tuple", 68)
+        self.addBuiltin("type", 69)
+        self.addBuiltin("vars", 70)
+        self.addBuiltin("zip", 71)
 
-    def builtin_mlir_name(self, name: str) -> str|None:
+    def is_builtin(self, name: str) -> bool:
+        return name in self._builtins
+
+    def builtin_mlir_idx(self, name: str) -> int|None:
         return self._builtins.get(name)
 
 bc = BuiltinSet()
-def builtin_mlir_name(name: str) -> str|None:
-    return bc.builtin_mlir_name(name)
+
+# Create a nuiltin attribute
+def builtin(block: mlir.Block, idx: int):
+    with mlir.InsertionPoint(block):
+        a = mlir.IntegerAttr.get(mlir.IntegerType.get_signless(32), idx)
+        return python_d.BuiltinOp(a)
+
+def builtin_getattr() -> int:
+    return 27
+
+def builtin_slice() -> mlir.IntegerAttr:
+    return 62
 
 # Represent a scope
 class VariableScope:
@@ -207,7 +221,7 @@ class VariableCapture(ast.NodeVisitor):
     # Record variable referenced in this scope
     def add_reference(self, ast: ast.Name):
         name = ast.id
-        if (builtin_mlir_name(name) == None) and not (name in self.vars) and not (name in self.references):
+        if not (bc.is_builtin(name)) and not (name in self.vars) and not (name in self.references):
             self.references[name] = ast
 
     # Add inner scope to this scope
@@ -434,6 +448,10 @@ class VariableCapture(ast.NodeVisitor):
     # See https://docs.python.org/3/reference/compound_stmts.html#with
     def visit_With(self, w: ast.With):
         for item in w.items:
+            var = item.optional_vars
+            if var != None:
+                assert(isinstance(var, ast.Name))
+                self.addVar(var, var.id)
             self.checked_visit_expr(item.context_expr)
         self.visit_stmts(w.body)
         return True
@@ -458,15 +476,34 @@ CellMap = Dict[str, mlir.Value]
 def alloc_variable_cells(map: CellMap, names: list[mlir.StringAttr], cells: list[mlir.Value], block:mlir.Block, vars: Dict[str, None]):
     with mlir.InsertionPoint(block):
         for var in vars:
-            cell = python_d.CellAlloc(None)
+            cell = python_d.CellAllocOp()
             map[var] = cell
             names.append(mlir.StringAttr.get(var))
             cells.append(cell)
+
+# Invoke the given method.
+def do_invoke(block: mlir.Block,
+              method: mlir.Value,
+              args: list[mlir.Value],
+              keywords: list[str]|None,
+              returnBlock: mlir.Block,
+              exceptBlock: mlir.Block):
+    if keywords == None or len(keywords) == 0:
+        keyAttr = None
+    else:
+        keyAttrs = []
+        for k in keywords:
+            keyAttrs.append(mlir.StringAttr.get(k))
+        keyAttr = mlir.ArrayAttr.get(keyAttrs)
+    with mlir.InsertionPoint(block):
+        invoke = python_d.InvokeOp(method, args, keywords=keyAttr)
+        python_d.RetBranchOp(invoke, [], [], returnBlock, exceptBlock)
 
 # This is the main class
 class Translator(ast.NodeVisitor):
     _cell_map: CellMap
     _scope_value: mlir.Value
+    _except_block: mlir.Block | None
 
     def __init__(self,
                  m: Module,
@@ -475,8 +512,8 @@ class Translator(ast.NodeVisitor):
                  cell_map: CellMap):
         self.module = m
         self.block = block
-        self.onDone = None
-        self.exceptBlock = None
+        self._on_done = None
+        self._except_block = None
         self._cell_map = cell_map
         self._scope_value = scope
 
@@ -485,15 +522,15 @@ class Translator(ast.NodeVisitor):
         if isinstance(tgt, ast.Tuple):
             n = len(tgt.elts)
             with mlir.InsertionPoint(self.block):
-                python_d.TupleCheck(v, mlir.IntegerAttr.get(mlir.IntegerType.get_signed(64), n))
+                python_d.TupleCheckOp(v, mlir.IntegerAttr.get(mlir.IntegerType.get_signed(64), n))
                 for i in range(0, n):
-                    sv = python_d.TupleGet(v, mlir.IntegerAttr.get(mlir.IntegerType.get_signed(64), i))
+                    sv = python_d.TupleGetOp(v, mlir.IntegerAttr.get(mlir.IntegerType.get_signed(64), i))
                     self.assign_lhs(tgt.elts[i], sv)
         elif isinstance(tgt, ast.Subscript):
             a = self.checked_visit_expr(tgt.value)
             idx = self.checked_visit_expr(tgt.slice)
             with mlir.InsertionPoint(self.block):
-                python_d.ArraySet(a, idx, v)
+                python_d.ArraySetOp(a, idx, v)
         elif isinstance(tgt, ast.Name):
             cell_store(self.block, self._cell_map[tgt.id], v)
         else:
@@ -512,39 +549,30 @@ class Translator(ast.NodeVisitor):
     # Return value denoting method with given name in value
     def get_method(self, w:mlir.Value, name: str) -> mlir.Value:
         with mlir.InsertionPoint(self.block):
-            return python_d.GetMethod(w, mlir.StringAttr.get(name))
+            return python_d.GetMethodOp(w, mlir.StringAttr.get(name))
 
 
-    def get_except_block(self):
-        if self.exceptBlock != None:
-           return self.exceptBlock
+    def get_except_block(self) -> mlir.Block:
+        if self._except_block != None:
+           return self._except_block
 
         valueType = python_d.ValueType.get()
-        exceptBlock = self.block.create_after(valueType)
+        exceptBlock = self.block.create_after(valueType, valueType)
         with mlir.InsertionPoint(exceptBlock):
-            r = python_d.MkExceptOp(exceptBlock.arguments[0])
+            e  = exceptBlock.arguments[0]
+            tb = exceptBlock.arguments[1]
+            r = python_d.MkExceptOp(e, tb)
             func_d.ReturnOp([r])
 
-        self.exceptBlock = exceptBlock
+        self._except_block = exceptBlock
         return exceptBlock
 
     # Invoke the given method.
     def invoke(self, method: mlir.Value, args: list[mlir.Value], keywords=None) -> mlir.Value:
-        if keywords == None or len(keywords) == 0:
-            keyAttr = None
-        else:
-            keyAttrs = []
-            for k in keywords:
-                keyAttrs.append(mlir.StringAttr.get(k))
-            keyAttr = mlir.ArrayAttr.get(keyAttrs)
-
         valueType = python_d.ValueType.get()
         exceptBlock = self.get_except_block()
         returnBlock = self.block.create_after(valueType)
-
-        with mlir.InsertionPoint(self.block):
-            python_d.InvokeOp(method, args, keyAttr, [], [], returnBlock, exceptBlock)
-
+        do_invoke(self.block, method, args, keywords, returnBlock, exceptBlock)
         self.block = returnBlock
         return returnBlock.arguments[0]
 
@@ -556,32 +584,27 @@ class Translator(ast.NodeVisitor):
     # Import a module and give it the given name
     def pythonImport(self, module:str, name: str) -> mlir.Value:
         with mlir.InsertionPoint(self.block):
-            m = python_d.Module(mlir.StringAttr.get(module))
-            python_d.CellStore(self._cell_map[name], m)
+            m = python_d.ModuleOp(mlir.StringAttr.get(module))
+            python_d.CellStoreOp(self._cell_map[name], m)
 
     # Create a formatted string
     def joined_string(self, args: list[mlir.Value]) -> mlir.Value:
         with mlir.InsertionPoint(self.block):
-            return python_d.FormattedString(args)
+            return python_d.FormattedStringOp(args)
 
     def string_constant(self, c: str) -> mlir.Value:
         with mlir.InsertionPoint(self.block):
-            return python_d.StrLit(mlir.StringAttr.get(c))
+            return python_d.StrLitOp(mlir.StringAttr.get(c))
 
     def int_constant(self, c: int) -> mlir.Value:
         with mlir.InsertionPoint(self.block):
             if -2**63 <= c and c < 2**63:
-                return python_d.S64Lit(mlir.IntegerAttr.get(mlir.IntegerType.get_signed(64), c))
+                return python_d.S64LitOp(mlir.IntegerAttr.get(mlir.IntegerType.get_signed(64), c))
             else:
-                return python_d.IntLit(mlir.StringAttr.get(str(c)))
-
-    # Create a nuiltin attribute
-    def builtin(self, name: str):
-        with mlir.InsertionPoint(self.block):
-            return python_d.Builtin(mlir.StringAttr.get(name))
+                return python_d.IntLitOp(mlir.StringAttr.get(str(c)))
 
     def load_value_attribute(self, v: mlir.Value, attr: str):
-        get = self.builtin("getattr")
+        get = builtin(self.block, builtin_getattr())
         return self.invoke(get, [v, self.string_constant(attr)])
 
     def returnOp(self, v: mlir.Value):
@@ -613,10 +636,9 @@ class Translator(ast.NodeVisitor):
 
         with mlir.InsertionPoint(self.module.mlir.body):
             tp = mlir.FunctionType.get(arg_types, [returnValueType])
-            fun = builtin_d.FuncOp(symbol_name, tp)
+            fun = func_d.FuncOp(symbol_name, tp)
         fun_block = mlir.Block.create_at_start(fun.regions[0], arg_types)
         # Initialize scope from function arguments.
-
         fun_cell_map = {}
 
         fun_name_attrs = []
@@ -635,7 +657,7 @@ class Translator(ast.NodeVisitor):
         alloc_variable_cells(fun_cell_map, fun_name_attrs, fun_cells, fun_block,  var_scope.vars)
 
         with mlir.InsertionPoint(fun_block):
-            fun_scope = python_d.ScopeExtend(fun_block.arguments[0], mlir.ArrayAttr.get(fun_name_attrs), fun_cells)
+            fun_scope = python_d.ScopeExtendOp(fun_block.arguments[0], mlir.ArrayAttr.get(fun_name_attrs), fun_cells)
 
         # Add explicit function arguments
         arg_names = []
@@ -651,7 +673,7 @@ class Translator(ast.NodeVisitor):
         symbol_attr = mlir.FlatSymbolRefAttr.get(symbol_name)
         arg_attrs = mlir.ArrayAttr.get(arg_names)
         with mlir.InsertionPoint(self.block):
-            fun_value = python_d.FunctionRef(symbol_attr, arg_attrs, self._scope_value, closure_cells)
+            fun_value = python_d.FunctionRefOp(symbol_attr, arg_attrs, self._scope_value, closure_cells)
 
         return fun_translator, fun_value
 
@@ -689,14 +711,13 @@ class Translator(ast.NodeVisitor):
         ast.Sub: python_d.SubOp
     }
 
-    def apply_binop(self, left: mlir.Value, op, right: mlir.Value) -> mlir.Value:
+    def apply_binop(self, left: mlir.Value, op: Callable[[mlir.Value, mlir.Value], mlir.Value], right: mlir.Value) -> mlir.Value:
         valueType = python_d.ValueType.get()
         exceptBlock = self.get_except_block()
         returnBlock = self.block.create_after(valueType)
 
         with mlir.InsertionPoint(self.block):
-            op(left, right, [], [], returnBlock, exceptBlock)
-
+            python_d.RetBranchOp(op(left, right), [], [], returnBlock, exceptBlock)
         self.block = returnBlock
         return returnBlock.arguments[0]
 
@@ -796,11 +817,11 @@ class Translator(ast.NodeVisitor):
         for a in e.elts:
             args.append(self.checked_visit_expr(a))
         with mlir.InsertionPoint(self.block):
-            return python_d.List(args)
+            return python_d.ListOp(args)
 
     def visit_ListComp(self, e: ast.ListComp) -> mlir.Value:
         # Get identifier of block to throw
-        throwBlock = self.get_except_block()
+        exceptBlock = self.get_except_block()
 
         # Save scope
         orig_cell_map = self._cell_map
@@ -808,7 +829,7 @@ class Translator(ast.NodeVisitor):
 
         # Create empty list for storing result.
         with mlir.InsertionPoint(self.block):
-            r = python_d.List([])
+            r = python_d.ListOp([])
 
         # Get append method off of list.
         append = self.get_method(r, 'append')
@@ -826,7 +847,7 @@ class Translator(ast.NodeVisitor):
             i = self.invoke(self.get_method(l, '__iter__'), [])
             next = self.get_method(i, '__next__')
 
-            nextBlock, self.block, bodyValue = invoke_next(next, self.block, doneBlock, throwBlock)
+            nextBlock, self.block, bodyValue = invoke_next(next, self.block, doneBlock, exceptBlock)
 
             # Update cell_map
             inner_var_scope = self.module.get_scope(id(g))
@@ -836,7 +857,7 @@ class Translator(ast.NodeVisitor):
 
             with mlir.InsertionPoint(self.block):
                 # Variables in comprehension do not escape.
-                self._scope_value = python_d.ScopeExtend(self._scope_value, mlir.ArrayAttr.get(var_name_attrs), cells)
+                self._scope_value = python_d.ScopeExtendOp(self._scope_value, mlir.ArrayAttr.get(var_name_attrs), cells)
 
             # Extend scope
 
@@ -868,16 +889,16 @@ class Translator(ast.NodeVisitor):
         try:
             cell = self._cell_map[name]
         except KeyError:
-            mlir_name = builtin_mlir_name(name)
-            if mlir_name != None:
-                return self.builtin(mlir_name)
+            idx = bc.builtin_mlir_idx(name)
+            if idx != None:
+                return builtin(self.block, idx)
             raise Exception(f'Could not find variable {node.id} at {node.lineno}:{node.col_offset}')
 
         valueType = python_d.ValueType.get()
         exceptBlock = self.get_except_block()
         returnBlock = self.block.create_after(valueType)
         with mlir.InsertionPoint(self.block):
-            r = python_d.CellLoad(cell, mlir.StringAttr.get(name))
+            r = python_d.CellLoadOp(cell, mlir.StringAttr.get(name))
             python_d.RetBranchOp(r, [], [], returnBlock, exceptBlock)
         self.block = returnBlock
         return returnBlock.arguments[0]
@@ -885,7 +906,7 @@ class Translator(ast.NodeVisitor):
     def visit_Slice(self, e: ast.Slice) -> mlir.Value:
         upper = self.checked_visit_expr(e.upper) if e.upper != None else self.none_value()
 
-        sliceFn = self.builtin('slice')
+        sliceFn = builtin(self.block, builtin_slice())
         if e.step != None:
             lower = self.checked_visit_expr(e.lower) if e.lower != None else self.none_value()
             step = self.checked_visit_expr(e.step)
@@ -929,7 +950,7 @@ class Translator(ast.NodeVisitor):
         returnBlock = self.block.create_after(valueType)
 
         with mlir.InsertionPoint(self.block):
-            op(arg, [], [], returnBlock, exceptBlock)
+            python_d.RetBranchOp(op(arg), [], [], returnBlock, exceptBlock)
 
         self.block = returnBlock
         return returnBlock.arguments[0]
@@ -1041,8 +1062,8 @@ class Translator(ast.NodeVisitor):
         return True
 
     def visit_Return(self, node: ast.Return):
-        if self.onDone:
-            self.onDone()
+        if self._on_done:
+            self._on_done()
 
         if node.value != None:
             ret = self.checked_visit_expr(node.value)
@@ -1054,30 +1075,97 @@ class Translator(ast.NodeVisitor):
 
     # See https://docs.python.org/3/reference/compound_stmts.html#with
     def visit_With(self, w: ast.With):
-        #FIXME. Add try/finally blocks
-        exitMethods = []
+        valueType = python_d.ValueType.get()
+
+        def addExitExceptionHandler(var, nextBlock):
+            # Create block to catch exception
+            newExceptBlock = self.block.create_after(valueType, valueType)
+            e  = newExceptBlock.arguments[0]
+            tb = newExceptBlock.arguments[1]
+            # This block will drop the return value and pass the exception to the except_block
+            propExceptBlock = newExceptBlock.create_after(valueType)
+            with mlir.InsertionPoint(newExceptBlock):
+                none = python_d.NoneOp()
+                tp = python_d.TypeOp(e)
+                if var != None:
+                    python_d.CellStoreOp(self._cell_map[var.id], none)
+                python_d.RetBranchOp(python_d.InvokeOp(exit, [tp, e, tb]),
+                    [], [], propExceptBlock, self._except_block)
+            with mlir.InsertionPoint(propExceptBlock):
+                r = propExceptBlock.arguments[0]
+                c = python_d.TruthyOp(r)
+                cf_d.CondBranchOp(c, [r],  [e, tb], nextBlock, self._except_block)
+            self._except_block = newExceptBlock
+
+        assert(len(w.items) > 0)
+
+        # Make sure self._except_block is set
+        self.get_except_block()
+
+        exit = None
+        var = None
+        # Block that control flow will jump to after final
+        # The argument is the
+        finalBlock = self.block.create_after(valueType)
+        nextBlock = finalBlock
         for item in w.items:
+            if exit != None:
+                # Update returnBlock
+                exitBlock = self.block.create_after(valueType)
+                # Calls exit and jumps to return
+                with mlir.InsertionPoint(exitBlock):
+                    none = python_d.NoneOp()
+                    if var != None:
+                        python_d.CellStoreOps(self._cell_map[var.id], none)
+                    python_d.RetBranchOp(
+                        python_d.InvokeOp(exit, [none, none, none]),
+                        [], [], nextBlock, self._except_block)
+
+                # Update nextBlock and _except_block
+                addExitExceptionHandler(var, nextBlock)
+                nextBlock = exitBlock
+
             ctx = self.checked_visit_expr(item.context_expr)
             assert(ctx != None)
             enter = self.get_method(ctx, '__enter__')
             exit = self.get_method(ctx, '__exit__')
-            r  = self.invoke(enter, [])
+
+            postEnterBlock = self.block.create_after(valueType)
+            with mlir.InsertionPoint(self.block):
+                python_d.RetBranchOp(
+                    python_d.InvokeOp(enter, []),
+                    [], [], postEnterBlock, self._except_block)
+
             var = item.optional_vars
             if var != None:
                 assert(isinstance(var, ast.Name))
-                cell_store(self.block, self.map[var.id], r)
-            exitMethods.append(exit)
-        prevDone = self.onDone
-        def onDone():
-            for exit in reversed(exitMethods):
-                self.invoke(exit, [])
-            if prevDone:
+                cell_store(postEnterBlock, self._cell_map[var.id], ctx)
+            self.block = postEnterBlock
+
+        assert(exit != None)
+        addExitExceptionHandler(var, nextBlock)
+
+        prevDone = self._on_done
+        def on_done1():
+            block = self.block
+            with mlir.InsertionPoint(block):
+                none = python_d.NoneOp()
+                python_d.RetBranchOp(
+                    python_d.InvokeOp(exit, [none, none, none]),
+                    [], [], nextBlock, self._except_block)
+            self.block = finalBlock
+        if prevDone:
+            def on_done():
+                on_done1()
                 prevDone()
-        self.onDone = onDone
+            self._on_done = on_done
+        else:
+            self._on_done = on_done1
+
         cont = self.visit_stmts(w.body)
-        self.onDone = prevDone
+        self._on_done = prevDone
         if cont:
-            onDone()
+            on_done1()
         return cont
 
     def visit_While(self, s: ast.While) -> bool:
@@ -1124,7 +1212,7 @@ def translateModule(tree) -> mlir.Module:
     with mlir.InsertionPoint(mod.mlir.body):
         returnValueType = python_d.ReturnValueType.get()
         tp = mlir.FunctionType.get([], [returnValueType])
-        fun = builtin_d.FuncOp("script_main", tp)
+        fun = func_d.FuncOp("script_main", tp)
     fun_block = mlir.Block.create_at_start(fun.regions[0], [])
     if len(var_scope.parent_vars) > 0:
         raise Exception(f"Did not expect unknown variables {var_scope.parent_vars}")
@@ -1134,7 +1222,7 @@ def translateModule(tree) -> mlir.Module:
     fun_cells = []
     alloc_variable_cells(global_cell_map, fun_name_attrs, fun_cells, fun_block, var_scope.vars)
     with mlir.InsertionPoint(fun_block):
-        fun_scope = python_d.ScopeInit(mlir.ArrayAttr.get(fun_name_attrs), fun_cells)
+        fun_scope = python_d.ScopeInitOp(mlir.ArrayAttr.get(fun_name_attrs), fun_cells)
     t = Translator(mod, fun_block, fun_scope, global_cell_map)
     cont = t.visit_stmts(tree.body)
     if cont:
@@ -1150,16 +1238,18 @@ def main():
     with open(path, "r") as source:
         tree = ast.parse(source.read())
 
-    with mlir.Context() as ctx, mlir.Location.file("f.mlir", line=42, col=1, context=ctx):
+    with mlir.Context() as ctx, mlir.Location.file(path, line=1, col=1, context=ctx):
+#        ctx.load_all_available_dialects()
+        ctx.allow_unregistered_dialects = True
         python_d.register_dialect()
         m = translateModule(tree)
 
-    if len(sys.argv) >= 3:
-        out_path = sys.argv[2]
-        with open(out_path, "w") as tgt:
-            tgt.write(str(m))
-    else:
-        print(str(m))
+        if len(sys.argv) >= 3:
+            out_path = sys.argv[2]
+            with open(out_path, "w") as tgt:
+                tgt.write(str(m))
+        else:
+            print(str(m))
 
 if __name__ == "__main__":
     main()

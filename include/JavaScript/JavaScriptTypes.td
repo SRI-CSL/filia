@@ -6,6 +6,7 @@
 #define MLIR_DIALECT_JAVASCRIPT_IR_JAVASCRIPTTYPES
 
 include "JavaScript/JavaScriptDialect.td"
+include "mlir/IR/AttrTypeBase.td"
 
 class JavaScript_Type<string name, string typeMnemonic>
     : TypeDef<JavaScript_Dialect, name, [], "::mlir::js::JavaScriptType"> {

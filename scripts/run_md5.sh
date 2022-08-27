@@ -11,7 +11,7 @@ echo "Generating $MLIRFILE"
 
 echo "Running python-opt"
 OPTMLIRFILE=example/md5_opt.mlir
-./dist/debug/bin/script-opt --python-load-store $MLIRFILE > example/md5_opt3.mlir
+./dist/debug/bin/script-opt --python-load-store $MLIRFILE > $OPTMLIRFILE
 ./dist/debug/bin/script-opt -canonicalize $OPTMLIRFILE > example/md5_opt2.mlir
 
 echo "Complete"

@@ -4,7 +4,7 @@
 #ifndef PYTHON_C_DIALECTS_H
 #define PYTHON_C_DIALECTS_H
 
-#include "mlir-c/Registration.h"
+#include "mlir-c/IR.h"
 
 #ifdef __cplusplus
 extern "C" {

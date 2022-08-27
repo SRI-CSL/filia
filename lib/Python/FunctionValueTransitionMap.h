@@ -8,7 +8,6 @@
 
 namespace mlir {
 class Block;
-class FuncOp;
 class Value;
 class MutableOperandRange;
 class DominanceInfo;
@@ -53,6 +52,7 @@ private:
     m.push_back(std::make_pair(target, operands));
   }
 
+
   template<typename T>
   static bool add_call_edges(SuccessorMap& m, mlir::Operation* opPtr) {
     if (!mlir::isa<T>(opPtr))
@@ -65,7 +65,7 @@ private:
   }
 
 public:
-  FunctionValueTransitionMap(mlir::FuncOp fun, mlir::DominanceInfo& domInfo);
+  FunctionValueTransitionMap(mlir::func::FuncOp fun, mlir::DominanceInfo& domInfo);
 
   const InheritedSet& getInheritedValues(mlir::Block* block) {
     auto i = inheritedValues.find(block);

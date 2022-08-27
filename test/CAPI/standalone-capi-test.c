@@ -18,7 +18,7 @@ int main(int argc, char **argv) {
   MlirContext ctx = mlirContextCreate();
   // TODO: Create the dialect handles for the builtin dialects and avoid this.
   // This adds dozens of MB of binary size over just the standalone dialect.
-  mlirRegisterAllDialects(ctx);
+//  mlirRegisterAllDialects(ctx);
   mlirDialectHandleRegisterDialect(mlirGetDialectHandle__python__(), ctx);
 
   MlirModule module = mlirModuleCreateParse(ctx,

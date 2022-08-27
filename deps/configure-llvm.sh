@@ -1,4 +1,5 @@
 #!/bin/bash
+cd "$(dirname $0)/.."
 
 cmake -G Ninja \
     -S deps/llvm-project/llvm \
@@ -6,6 +7,7 @@ cmake -G Ninja \
     -DCMAKE_INSTALL_PREFIX=deps/llvm-install \
     -DCMAKE_BUILD_TYPE=Release \
     -DLLVM_ENABLE_PROJECTS=mlir \
+    -DLLVM_ENABLE_ZLIB=Off \
     -DMLIR_ENABLE_BINDINGS_PYTHON=On \
     -DLLVM_BUILD_TOOLS=OFF \
     -DLLVM_INSTALL_UTILS=ON \

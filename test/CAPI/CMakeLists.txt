@@ -6,7 +6,6 @@ add_mlir_aggregate(StandaloneCAPITestLib
   SHARED
   EMBED_LIBS
   MLIRCAPIIR
-  MLIRCAPIRegistration
   PythonDialectCAPI
 )
 
@@ -16,3 +15,4 @@ add_llvm_executable(standalone-capi-test
 llvm_update_compile_flags(standalone-capi-test)
 target_link_libraries(standalone-capi-test
   PRIVATE StandaloneCAPITestLib)
+target_compile_features(standalone-capi-test PRIVATE cxx_std_17)

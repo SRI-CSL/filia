@@ -15,6 +15,7 @@ def JavaScript_Dialect : Dialect {
         types and functions.
     }];
     let cppNamespace = "::mlir::js";
+    let useDefaultTypePrinterParser = 1;
 }
 
 // Base Javascript operation

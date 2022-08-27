@@ -32,11 +32,11 @@ CellDomain CellDomain::initializeFromPrev(
         return CellDomain::value(ValueDomain::make_argument(argIndex));
       }
       break;
-    default:
-      report_fatal_error("Invalid value domain");
+    //default:
+    //  report_fatal_error("Invalid value domain");
     }
-  default:
-    report_fatal_error("Invalid cell domain");
+  //default:
+  //  report_fatal_error("Invalid cell domain");
   }
 }
 

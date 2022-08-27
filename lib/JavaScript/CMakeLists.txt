@@ -12,3 +12,4 @@ add_mlir_dialect_library(MLIRJavaScript
 	LINK_LIBS PUBLIC
 	MLIRIR
 	)
+target_compile_features(obj.MLIRJavaScript PRIVATE cxx_std_17)

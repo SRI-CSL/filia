@@ -18,6 +18,7 @@ def Python_Dialect : Dialect {
         in MLIR.
     }];
     let cppNamespace = "::mlir::python";
+    let useDefaultTypePrinterParser = 1;
 }
 
 //===----------------------------------------------------------------------===//
